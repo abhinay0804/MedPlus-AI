@@ -186,6 +186,7 @@ export const PatientSettings: React.FC = () => {
               <div>
                 <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Google Calendar Integration</h2>
                 <p className="text-xs text-slate-500">Automatically sync confirmed consultations directly to your Google Calendar</p>
+                <p className="text-[10px] text-amber-500 font-semibold mt-1">Note: App is in Sandbox/Testing mode. Please use the pre-configured evaluator Gmail test account to connect.</p>
               </div>
             </div>
             <button
