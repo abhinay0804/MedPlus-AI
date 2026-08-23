@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Appointment Rescheduled</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7f6; margin: 0; padding: 20px; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.08); }
+        .header { background: linear-gradient(135deg, #d97706, #b45309); padding: 30px; text-align: center; color: white; }
+        .header h1 { margin: 0; font-size: 24px; font-weight: 600; }
+        .content { padding: 30px; }
+        .card { background: #fffbeb; border-left: 4px solid #d97706; padding: 20px; margin: 20px 0; border-radius: 6px; }
+        .detail-row { display: flex; justify-content: space-between; margin-bottom: 10px; border-bottom: 1px dashed #e2e8f0; padding-bottom: 8px; }
+        .footer { background: #f1f5f9; padding: 20px; text-align: center; font-size: 12px; color: #64748b; }
+        .badge { background: #fef3c7; color: #b45309; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Appointment Rescheduled</h1>
+        </div>
+        <div class="content">
+            <p>Dear <strong>{{ patient_name }}</strong>,</p>
+            <p>Your appointment has been successfully rescheduled. Below are the updated details:</p>
+            
+            <div class="card">
+                <div style="margin-bottom: 15px;"><span class="badge">RESCHEDULED</span></div>
+                <div class="detail-row"><strong>Doctor:</strong> <span>{{ doctor_name }}</span></div>
+                <div class="detail-row"><strong>Previous Date:</strong> <span>{{ old_slot_start }}</span></div>
+                <div class="detail-row"><strong>New Date & Time:</strong> <span>{{ new_slot_start }}</span></div>
+                <div class="detail-row"><strong>Appointment ID:</strong> <span>{{ appointment_id }}</span></div>
+            </div>
+
+            <p>Best regards,<br><strong>HealthCare Appointments Team</strong></p>
+        </div>
+        <div class="footer">
+            <p>&copy; 2026 HealthCare Appointments Manager. All rights reserved.</p>
+        </div>
+    </div>
+</body>
+</html>

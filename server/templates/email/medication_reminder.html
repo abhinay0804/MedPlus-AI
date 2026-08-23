@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Medication Reminder</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7f6; margin: 0; padding: 20px; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.08); }
+        .header { background: linear-gradient(135deg, #16a34a, #15803d); padding: 30px; text-align: center; color: white; }
+        .header h1 { margin: 0; font-size: 24px; font-weight: 600; }
+        .content { padding: 30px; }
+        .card { background: #f0fdf4; border-left: 4px solid #16a34a; padding: 20px; margin: 20px 0; border-radius: 6px; }
+        .detail-row { display: flex; justify-content: space-between; margin-bottom: 10px; border-bottom: 1px dashed #e2e8f0; padding-bottom: 8px; }
+        .footer { background: #f1f5f9; padding: 20px; text-align: center; font-size: 12px; color: #64748b; }
+        .badge { background: #dcfce7; color: #15803d; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Medication Reminder</h1>
+        </div>
+        <div class="content">
+            <p>Dear <strong>{{ patient_name }}</strong>,</p>
+            <p>It is time to take your prescribed medication as outlined below:</p>
+            
+            <div class="card">
+                <div style="margin-bottom: 15px;"><span class="badge">MEDICATION REMINDER</span></div>
+                <div class="detail-row"><strong>Medication:</strong> <span>{{ medication_name }}</span></div>
+                <div class="detail-row"><strong>Dosage:</strong> <span>{{ dosage }}</span></div>
+                <div class="detail-row"><strong>Instructions:</strong> <span>{{ frequency }}</span></div>
+            </div>
+
+            <p>Please ensure you follow your doctor's exact instructions.</p>
+            <p>Best regards,<br><strong>HealthCare Appointments Team</strong></p>
+        </div>
+        <div class="footer">
+            <p>&copy; 2026 HealthCare Appointments Manager. All rights reserved.</p>
+        </div>
+    </div>
+</body>
+</html>

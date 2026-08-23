@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Doctor Unavailable - Cancellation</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7f6; margin: 0; padding: 20px; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.08); }
+        .header { background: linear-gradient(135deg, #4f46e5, #4338ca); padding: 30px; text-align: center; color: white; }
+        .header h1 { margin: 0; font-size: 24px; font-weight: 600; }
+        .content { padding: 30px; }
+        .card { background: #eef2ff; border-left: 4px solid #4f46e5; padding: 20px; margin: 20px 0; border-radius: 6px; }
+        .detail-row { display: flex; justify-content: space-between; margin-bottom: 10px; border-bottom: 1px dashed #e2e8f0; padding-bottom: 8px; }
+        .footer { background: #f1f5f9; padding: 20px; text-align: center; font-size: 12px; color: #64748b; }
+        .badge { background: #e0e7ff; color: #4338ca; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Doctor Leave Cancellation Notice</h1>
+        </div>
+        <div class="content">
+            <p>Dear <strong>{{ patient_name }}</strong>,</p>
+            <p>We regret to inform you that your doctor, <strong>{{ doctor_name }}</strong>, will be unavailable on <strong>{{ leave_date }}</strong>. As a result, your appointment has been cancelled.</p>
+            
+            <div class="card">
+                <div style="margin-bottom: 15px;"><span class="badge">DOCTOR ON LEAVE</span></div>
+                <div class="detail-row"><strong>Doctor:</strong> <span>{{ doctor_name }}</span></div>
+                <div class="detail-row"><strong>Scheduled Date:</strong> <span>{{ leave_date }}</span></div>
+                <div class="detail-row"><strong>Appointment ID:</strong> <span>{{ appointment_id }}</span></div>
+            </div>
+
+            <p>We sincerely apologize for the inconvenience. Please log in to reschedule your appointment for an alternative date.</p>
+            <p>Best regards,<br><strong>HealthCare Appointments Team</strong></p>
+        </div>
+        <div class="footer">
+            <p>&copy; 2026 HealthCare Appointments Manager. All rights reserved.</p>
+        </div>
+    </div>
+</body>
+</html>

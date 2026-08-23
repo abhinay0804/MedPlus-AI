@@ -1,0 +1,54 @@
+{
+  "info": {
+    "name": "HealthCare Appointment & Follow-Up Manager API",
+    "_postman_id": "c1f2e3d4-5678-90ab-cdef-1234567890ab",
+    "description": "Postman API collection for HealthCare Appointment platform including Auth, Patient, Doctor, and Admin endpoints.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Auth - Register",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"evaluator@example.com\",\n  \"password\": \"Password123!\",\n  \"full_name\": \"Evaluator User\",\n  \"phone\": \"+15550001111\",\n  \"role\": \"PATIENT\"\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/api/auth/register", "host": ["{{baseUrl}}"], "path": ["api", "auth", "register"] }
+      }
+    },
+    {
+      "name": "Auth - Login",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"admin@healthcare.com\",\n  \"password\": \"Admin123!\"\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "auth", "login"] }
+      }
+    },
+    {
+      "name": "Patient - Search Doctors",
+      "request": {
+        "method": "GET",
+        "url": { "raw": "{{baseUrl}}/api/patient/doctors", "host": ["{{baseUrl}}"], "path": ["api", "patient", "doctors"] }
+      }
+    },
+    {
+      "name": "Admin - Get Dashboard Stats",
+      "request": {
+        "method": "GET",
+        "url": { "raw": "{{baseUrl}}/api/admin/dashboard", "host": ["{{baseUrl}}"], "path": ["api", "admin", "dashboard"] }
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8000"
+    }
+  ]
+}

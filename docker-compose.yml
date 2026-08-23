@@ -1,0 +1,102 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: healthcare_db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-healthcare}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-healthcare_pass}
+      POSTGRES_DB: ${POSTGRES_DB:-healthcare_db}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-healthcare}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: healthcare_redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: healthcare_backend
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-healthcare}:${POSTGRES_PASSWORD:-healthcare_pass}@postgres:5432/${POSTGRES_DB:-healthcare_db}
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      JWT_SECRET: ${JWT_SECRET:-super-secret-jwt-key-for-healthcare-app-2026}
+      GOOGLE_GENAI_API_KEY: ${GOOGLE_GENAI_API_KEY:-}
+      BACKEND_PORT: 8000
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  celery_worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: healthcare_celery_worker
+    command: celery -A microservices.celery_app worker --loglevel=info
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-healthcare}:${POSTGRES_PASSWORD:-healthcare_pass}@postgres:5432/${POSTGRES_DB:-healthcare_db}
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      JWT_SECRET: ${JWT_SECRET:-super-secret-jwt-key-for-healthcare-app-2026}
+      GOOGLE_GENAI_API_KEY: ${GOOGLE_GENAI_API_KEY:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  celery_beat:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: healthcare_celery_beat
+    command: celery -A microservices.celery_app beat --loglevel=info
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-healthcare}:${POSTGRES_PASSWORD:-healthcare_pass}@postgres:5432/${POSTGRES_DB:-healthcare_db}
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      JWT_SECRET: ${JWT_SECRET:-super-secret-jwt-key-for-healthcare-app-2026}
+      GOOGLE_GENAI_API_KEY: ${GOOGLE_GENAI_API_KEY:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: healthcare_frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:

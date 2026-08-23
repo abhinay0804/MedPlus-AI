@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MedPulse AI — Security Verification OTP</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f1f5f9; color: #0f172a; margin: 0; padding: 12px; }
+    .card { max-width: 580px; margin: 0 auto; background: #ffffff; border-radius: 20px; overflow: hidden; border: 1px solid #e2e8f0; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05); }
+    .header { background: linear-gradient(135deg, #0f766e 0%, #0d9488 50%, #059669 100%); padding: 28px 20px; text-align: center; color: #ffffff; }
+    .brand { font-size: 24px; font-weight: 800; letter-spacing: -0.5px; margin: 0; }
+    .subtitle { font-size: 12px; color: #ccfbf1; font-weight: 500; margin-top: 4px; opacity: 0.95; }
+    .body { padding: 28px 20px; }
+    .greeting { font-size: 15px; font-weight: 700; color: #0f172a; margin-bottom: 8px; }
+    .intro { font-size: 13px; color: #334155; line-height: 1.6; margin-bottom: 16px; }
+    
+    .instruction-box { background: #f0fdf4; border-left: 4px solid #10b981; padding: 12px 14px; border-radius: 8px; font-size: 12px; color: #065f46; margin-bottom: 20px; line-height: 1.5; }
+    
+    /* Clean Mobile-Optimized OTP Security Code Box */
+    .otp-card {
+      margin: 20px 0;
+      padding: 24px 16px;
+      background: linear-gradient(180deg, #f0fdf4 0%, #dcfce7 100%);
+      border: 2px dashed #10b981;
+      border-radius: 16px;
+      text-align: center;
+    }
+    .otp-header { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 2px; color: #047857; margin-bottom: 8px; }
+    .otp-code { 
+      font-size: 32px; 
+      font-weight: 900; 
+      letter-spacing: 6px; 
+      color: #065f46; 
+      font-family: 'Courier New', Courier, monospace; 
+      margin: 8px 0; 
+      white-space: nowrap !important;
+      word-break: keep-all !important;
+      display: inline-block;
+    }
+    .expiry-note { font-size: 11px; color: #059669; font-weight: 600; margin-top: 8px; }
+
+    /* Security Disclaimer Box */
+    .security-notice { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px; margin: 20px 0; font-size: 11px; color: #64748b; line-height: 1.6; }
+    .security-notice p { margin: 0 0 6px 0; }
+    .security-notice p:last-child { margin: 0; }
+    .security-notice strong { color: #475569; }
+
+    .signoff { margin-top: 24px; padding-top: 16px; border-top: 1px solid #f1f5f9; font-size: 12px; color: #475569; line-height: 1.6; }
+    .footer { background: #f8fafc; padding: 16px; text-align: center; font-size: 10px; color: #94a3b8; border-top: 1px solid #e2e8f0; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <div class="brand">🏥 MedPulse AI</div>
+      <div class="subtitle">Smart Healthcare & Clinical Triage Network</div>
+    </div>
+    <div class="body">
+      <div class="greeting">Greetings from the MedPulse AI Team,</div>
+      <p class="intro">Hello <strong>{{ name }}</strong>,</p>
+      
+      <div class="instruction-box">
+        Kindly enter your 6-digit <strong>{{ purpose }}</strong> code below on the portal to finalize your action.
+      </div>
+
+      <!-- Security OTP Badge Box -->
+      <div class="otp-card">
+        <div class="otp-header">🔒 Your {{ purpose }} Security Code</div>
+        <div>
+          <span class="otp-code">{{ otp_code }}</span>
+        </div>
+        <div class="expiry-note">⏱️ Valid for 10 minutes &bull; Strictly confidential</div>
+      </div>
+
+      <!-- Security Disclaimers -->
+      <div class="security-notice">
+        <p>🤖 <strong>Automated System Message:</strong> Please do not reply to this email as this is an automated notification from an unmonitored inbox.</p>
+        <p>🛡️ <strong>Confidentiality Warning:</strong> Do not share this OTP code with anyone. MedPulse AI representatives will never ask for your verification code.</p>
+        <p>ℹ️ <strong>Didn't request this code?</strong> Kindly ignore this email if you did not request a verification code; your account remains completely safe and secure.</p>
+      </div>
+
+      <div class="signoff">
+        <p style="margin: 0 0 4px 0;">Thank you for choosing <strong>MedPulse AI</strong>.</p>
+        <p style="margin: 0 0 14px 0; color: #0d9488; font-weight: 600;">It is always a pleasure to serve you and safeguard your healthcare journey.</p>
+        <p style="margin: 0;">Warm regards,<br><strong>MedPulse AI Clinical & Security Team</strong></p>
+      </div>
+    </div>
+    <div class="footer">
+      &copy; 2026 MedPulse AI Inc. &bull; 256-Bit Encrypted Automated System Notification &bull; HIPAA Compliant
+    </div>
+  </div>
+</body>
+</html>
