@@ -524,12 +524,14 @@ def retry_failed_emails_task():
 @celery_app.task(name="microservices.tasks.handle_doctor_leave_task")
 def handle_doctor_leave_task(doctor_id: str, leave_date_str: str):
     """
-    Process doctor leave: notify patients with cancelled appointments on leave_date.
+    Process doctor leave: attempt to auto-reschedule affected patients on leave_date
+    to another doctor of the same specialty. If none is available, fall back to cancellation.
     """
     async def _run():
         from sqlalchemy import select
         from sqlalchemy.orm import selectinload
-        from server.database.models import Appointment, AppointmentStatus, DoctorProfile
+        from server.database.models import Appointment, AppointmentStatus, DoctorProfile, AuditLog
+        from server.services.slot_service import generate_slots
 
         async with AsyncSessionLocal() as db:
             doc_result = await db.execute(
@@ -538,12 +540,17 @@ def handle_doctor_leave_task(doctor_id: str, leave_date_str: str):
                 .where(DoctorProfile.id == doctor_id)
             )
             doctor = doc_result.scalar_one_or_none()
-            doc_name = doctor.user.full_name if doctor and doctor.user else "your doctor"
+            if not doctor:
+                logger.error(f"[DoctorLeave] Doctor ID {doctor_id} not found.")
+                return
+            doc_name = doctor.user.full_name if doctor.user else "your doctor"
+            specialty = doctor.specialisation
 
             leave_d = datetime.strptime(leave_date_str, "%Y-%m-%d").date()
             day_start = datetime(leave_d.year, leave_d.month, leave_d.day)
             day_end = day_start + timedelta(days=1)
 
+            # Query CONFIRMED, HELD, PENDING_APPROVAL appointments for this doctor on leave_date
             appts_result = await db.execute(
                 select(Appointment)
                 .options(selectinload(Appointment.patient))
@@ -551,23 +558,119 @@ def handle_doctor_leave_task(doctor_id: str, leave_date_str: str):
                     Appointment.doctor_id == doctor_id,
                     Appointment.slot_start >= day_start,
                     Appointment.slot_start < day_end,
-                    Appointment.status == AppointmentStatus.CANCELLED,
+                    Appointment.status.in_([
+                        AppointmentStatus.CONFIRMED,
+                        AppointmentStatus.HELD,
+                        AppointmentStatus.PENDING_APPROVAL
+                    ])
                 )
             )
             affected = appts_result.scalars().all()
-            for appt in affected:
-                send_email_task.delay(
-                    to_email=appt.patient.email,
-                    subject="Doctor Unavailable - Appointment Cancelled",
-                    template_name="doctor_leave_cancellation.html",
-                    context={
-                        "patient_name": appt.patient.full_name,
-                        "doctor_name": doc_name,
-                        "leave_date": leave_date_str,
-                        "appointment_id": appt.id,
-                    }
+            if not affected:
+                logger.info(f"[DoctorLeave] No active appointments found for Doctor {doctor_id} on {leave_date_str}")
+                return
+
+            # Find other active doctors in same specialty
+            other_docs_result = await db.execute(
+                select(DoctorProfile)
+                .options(selectinload(DoctorProfile.user))
+                .where(
+                    DoctorProfile.specialisation == specialty,
+                    DoctorProfile.id != doctor_id,
+                    DoctorProfile.is_active == True,
                 )
-                sync_calendar_event_task.delay(appt.id, "delete")
+            )
+            other_docs = other_docs_result.scalars().all()
+
+            for appt in affected:
+                rescheduled = False
+                orig_start = appt.slot_start
+                old_slot_str = orig_start.strftime("%Y-%m-%d %I:%M %p")
+
+                if other_docs:
+                    candidate_slots = []
+                    for doc in other_docs:
+                        slots = await generate_slots(db, doc.id, leave_d)
+                        for s in slots:
+                            if s.get("is_available"):
+                                candidate_slots.append((doc, s))
+
+                    if candidate_slots:
+                        # Sort slots by proximity to original slot start time
+                        candidate_slots.sort(key=lambda item: abs((item[1]["slot_start"] - orig_start).total_seconds()))
+                        chosen_doc, chosen_slot = candidate_slots[0]
+                        new_slot_str = chosen_slot["slot_start"].strftime("%Y-%m-%d %I:%M %p")
+
+                        # Perform auto-reschedule
+                        appt.doctor_id = chosen_doc.id
+                        appt.slot_start = chosen_slot["slot_start"]
+                        appt.slot_end = chosen_slot["slot_end"]
+
+                        # Audit log
+                        audit = AuditLog(
+                            action="LEAVE_AUTO_RESCHEDULE",
+                            target_type="Appointment",
+                            target_id=appt.id,
+                            details={
+                                "original_doctor_id": doctor_id,
+                                "new_doctor_id": chosen_doc.id,
+                                "original_slot": old_slot_str,
+                                "new_slot": new_slot_str,
+                            }
+                        )
+                        db.add(audit)
+
+                        # Email notice
+                        send_email_task.delay(
+                            to_email=appt.patient.email,
+                            subject="Appointment Automatically Rescheduled",
+                            template_name="reschedule_notice",
+                            context={
+                                "patient_name": appt.patient.full_name,
+                                "appointment_id": appt.id,
+                                "new_slot_start": new_slot_str,
+                                "doctor_name": chosen_doc.user.full_name,
+                                "specialisation": specialty,
+                                "extra_message": f"your appointment has been automatically rescheduled to a new doctor because Dr. {doc_name} is on leave on this day. Sorry for the inconvenience caused."
+                            }
+                        )
+
+                        # Update calendar sync
+                        sync_calendar_event_task.delay(appt.id, "update")
+                        rescheduled = True
+                        logger.info(f"[DoctorLeave] Rescheduled appointment {appt.id} to Doctor {chosen_doc.id} ({new_slot_str})")
+
+                if not rescheduled:
+                    # Fallback to Cancellation
+                    appt.status = AppointmentStatus.CANCELLED
+                    appt.hold_expires_at = None
+
+                    audit = AuditLog(
+                        action="LEAVE_AUTO_CANCEL",
+                        target_type="Appointment",
+                        target_id=appt.id,
+                        details={
+                            "doctor_id": doctor_id,
+                            "slot": old_slot_str,
+                        }
+                    )
+                    db.add(audit)
+
+                    send_email_task.delay(
+                        to_email=appt.patient.email,
+                        subject="Doctor Unavailable - Appointment Cancelled",
+                        template_name="doctor_leave_cancellation.html",
+                        context={
+                            "patient_name": appt.patient.full_name,
+                            "doctor_name": doc_name,
+                            "leave_date": leave_date_str,
+                            "appointment_id": appt.id,
+                        }
+                    )
+                    sync_calendar_event_task.delay(appt.id, "delete")
+                    logger.info(f"[DoctorLeave] Cancelled appointment {appt.id} (no replacement doctor/slot available)")
+
+            await db.commit()
 
     run_async(_run())
 

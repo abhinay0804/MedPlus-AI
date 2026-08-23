@@ -166,18 +166,11 @@ async def mark_doctor_leave(id: str, data: LeaveCreate, db: AsyncSession = Depen
     result = await db.execute(stmt)
     affected_appointments = list(result.scalars().all())
     
-    # Cancel affected appointments
-    for apt in affected_appointments:
-        apt.status = AppointmentStatus.CANCELLED
-    
-    await db.flush()
-    
-    # Dispatch Celery task: notify patients and revoke calendar events for
-    # all appointments that were just cancelled by the leave.
+    # Dispatch Celery task to handle auto-rescheduling or fallback cancellation
     if affected_appointments:
         handle_doctor_leave_task.delay(id, str(data.leave_date))
         logger.info(
-            f"[AdminLeave] Queued leave notification for {len(affected_appointments)} "
+            f"[AdminLeave] Queued leave processing for {len(affected_appointments)} "
             f"affected appointments on {data.leave_date}"
         )
     
@@ -384,11 +377,70 @@ async def list_admin_leave_requests(
         leaves_res = await db.execute(leaves_stmt)
         leaves_taken = leaves_res.scalar_one() or 0
         
+        # Calculate appointments for the leave_date
+        from datetime import datetime, timedelta
+        from server.database.models import Appointment, AppointmentStatus
+        
+        day_start = datetime(req.leave_date.year, req.leave_date.month, req.leave_date.day)
+        day_end = day_start + timedelta(days=1)
+        
+        apts_stmt = (
+            select(Appointment)
+            .options(selectinload(Appointment.symptom_form))
+            .where(
+                Appointment.doctor_id == req.doctor_id,
+                Appointment.slot_start >= day_start,
+                Appointment.slot_start < day_end,
+                Appointment.status.in_([
+                    AppointmentStatus.CONFIRMED,
+                    AppointmentStatus.HELD,
+                    AppointmentStatus.PENDING_APPROVAL
+                ])
+            )
+        )
+        apts_res = await db.execute(apts_stmt)
+        apts = apts_res.scalars().all()
+        
+        confirmed_count = sum(1 for a in apts if a.status == AppointmentStatus.CONFIRMED)
+        pending_count = sum(1 for a in apts if a.status in [AppointmentStatus.HELD, AppointmentStatus.PENDING_APPROVAL])
+        
+        high_urgency = 0
+        medium_urgency = 0
+        low_urgency = 0
+        for a in apts:
+            if a.symptom_form and a.symptom_form.urgency_level:
+                u_str = a.symptom_form.urgency_level.name.upper()
+                if "HIGH" in u_str:
+                    high_urgency += 1
+                elif "MEDIUM" in u_str or "MID" in u_str:
+                    medium_urgency += 1
+                else:
+                    low_urgency += 1
+            else:
+                low_urgency += 1
+                
+        # Get AI recommendation
+        from server.services.llm_service import get_leave_recommendation
+        doc_name = req.doctor.user.full_name if req.doctor and req.doctor.user else "Unknown Doctor"
+        specialty = req.doctor.specialisation if req.doctor else "Unknown"
+        
+        ai_rec = await get_leave_recommendation(
+            doctor_name=doc_name,
+            specialty=specialty,
+            reason=req.reason,
+            leaves_taken_this_month=leaves_taken,
+            confirmed_count=confirmed_count,
+            pending_count=pending_count,
+            high_urgency=high_urgency,
+            medium_urgency=medium_urgency,
+            low_urgency=low_urgency
+        )
+        
         out.append({
             "id": req.id,
             "doctor_id": req.doctor_id,
-            "doctor_name": req.doctor.user.full_name if req.doctor and req.doctor.user else "Unknown Doctor",
-            "doctor_specialisation": req.doctor.specialisation if req.doctor else "Unknown",
+            "doctor_name": doc_name,
+            "doctor_specialisation": specialty,
             "leave_date": str(req.leave_date),
             "reason": req.reason,
             "status": req.status,
@@ -396,6 +448,13 @@ async def list_admin_leave_requests(
             "created_at": req.created_at.isoformat(),
             "resolved_at": req.resolved_at.isoformat() if req.resolved_at else None,
             "leaves_taken_this_month": leaves_taken,
+            "confirmed_appointments": confirmed_count,
+            "pending_appointments": pending_count,
+            "high_urgency_count": high_urgency,
+            "medium_urgency_count": medium_urgency,
+            "low_urgency_count": low_urgency,
+            "ai_suggestion": ai_rec.get("suggestion", "APPROVE"),
+            "ai_reason": ai_rec.get("reason", ""),
         })
     return out
 
@@ -453,11 +512,6 @@ async def resolve_doctor_leave_request(
             )
             apts_res = await db.execute(stmt_apts)
             affected_appointments = list(apts_res.scalars().all())
-            
-            for apt in affected_appointments:
-                apt.status = AppointmentStatus.CANCELLED
-                
-            await db.flush()
             
             if affected_appointments:
                 handle_doctor_leave_task.delay(doctor.id, str(req.leave_date))

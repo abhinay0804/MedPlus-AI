@@ -356,6 +356,53 @@ export const LeaveManager: React.FC = () => {
                       </div>
                     </div>
 
+                    {/* Conflict Assessment & AI recommendation */}
+                    <div className="bg-slate-50/30 dark:bg-slate-950/10 p-4 rounded-xl border border-slate-200/50 dark:border-slate-800/50 space-y-3">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <div className="flex items-center space-x-4">
+                          <div>
+                            <span className="text-[10px] font-bold uppercase text-slate-400 block mb-1">Confirmed Bookings</span>
+                            <span className={`px-2 py-0.5 rounded text-xs font-bold ${req.confirmed_appointments > 0 ? 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'}`}>
+                              {req.confirmed_appointments} affected
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-[10px] font-bold uppercase text-slate-400 block mb-1">Pending Approval</span>
+                            <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-650 dark:bg-slate-800 dark:text-slate-350 text-xs font-semibold">
+                              {req.pending_appointments} pending
+                            </span>
+                          </div>
+                        </div>
+
+                        {req.confirmed_appointments + req.pending_appointments > 0 && (
+                          <div className="flex items-center space-x-2 text-xs">
+                            <span className="text-slate-450 font-medium">Urgency:</span>
+                            <span className="px-1.5 py-0.5 rounded bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-400 font-bold">{req.high_urgency_count} High</span>
+                            <span className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-750 dark:bg-amber-500/10 dark:text-amber-400 font-bold">{req.medium_urgency_count} Mid</span>
+                            <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-400 font-bold">{req.low_urgency_count} Low</span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Gemini Suggestion Badge & reason */}
+                      <div className="border-t border-slate-150 dark:border-slate-800/80 pt-3 flex items-start space-x-3">
+                        <div className="flex-shrink-0 mt-0.5">
+                          <span className={`px-2.5 py-1 rounded text-[10px] font-black tracking-wider uppercase ${
+                            req.ai_suggestion === 'APPROVE' 
+                              ? 'bg-emerald-100 text-emerald-850 dark:bg-emerald-500/20 dark:text-emerald-400'
+                              : req.ai_suggestion === 'REJECT'
+                              ? 'bg-rose-100 text-rose-850 dark:bg-rose-500/20 dark:text-rose-400'
+                              : 'bg-amber-100 text-amber-855 dark:bg-amber-500/20 dark:text-amber-400'
+                          }`}>
+                            AI Suggestion: {req.ai_suggestion}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-600 dark:text-slate-400 italic">
+                          "{req.ai_reason}"
+                        </p>
+                      </div>
+                    </div>
+
                     {req.admin_reason && (
                       <div className="bg-rose-50/50 dark:bg-rose-950/15 border-l-4 border-rose-500 p-3 rounded-r-lg text-xs text-rose-700 dark:text-rose-300">
                         <strong>Admin Feedback:</strong> {req.admin_reason}

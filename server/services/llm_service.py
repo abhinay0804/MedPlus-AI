@@ -532,3 +532,66 @@ async def analyze_symptom_specialty(symptoms: str) -> dict:
         "reasoning": reason,
         "extracted_intake": intake
     }
+
+
+async def get_leave_recommendation(
+    doctor_name: str,
+    specialty: str,
+    reason: str,
+    leaves_taken_this_month: int,
+    confirmed_count: int,
+    pending_count: int,
+    high_urgency: int,
+    medium_urgency: int,
+    low_urgency: int,
+) -> dict:
+    """
+    Get a leave request approval suggestion from Gemini.
+    Returns: {"suggestion": "APPROVE" | "REJECT" | "CAUTION", "reason": "Explanation"}
+    """
+    fallback = {
+        "suggestion": "APPROVE" if high_urgency == 0 else "CAUTION",
+        "reason": (
+            "Recommendation generated using local scheduling rules: No critical cases scheduled today."
+            if high_urgency == 0
+            else f"Local Rule Flag: Doctor has {high_urgency} high urgency cases scheduled today. Handle with care."
+        )
+    }
+
+    prompt = f"""
+You are an expert healthcare director and operations manager. 
+A doctor has submitted a leave request. Analyze the following operational parameters:
+- Doctor Name: {doctor_name}
+- Specialty: {specialty}
+- Reason for Leave: {reason}
+- Total Leaves Taken So Far This Month: {leaves_taken_this_month}
+- Confirmed Bookings on Request Date: {confirmed_count}
+- Pending/Unapproved Bookings on Request Date: {pending_count}
+- Urgency Levels of Scheduled Bookings:
+  * High Urgency: {high_urgency}
+  * Medium Urgency: {medium_urgency}
+  * Low Urgency: {low_urgency}
+
+Provide a recommendation on whether the admin should Approve, Reject, or flag the leave with Caution.
+Guidelines:
+- Approve if there are very few bookings, no high-urgency patients, or the reason is critical (e.g. medical/personal emergency).
+- Suggest Caution if there are medium-urgency patients or the doctor has taken 3+ leaves this month.
+- Reject if there are high-urgency patients who cannot be easily rescheduled or the doctor has excessive leaves without a critical reason.
+
+Return a JSON object containing:
+- "suggestion": "APPROVE", "REJECT", or "CAUTION"
+- "reason": A brief, professional, and clear 1-2 sentence explanation supporting your recommendation. Do not use markdown backticks in the response.
+
+JSON ONLY:
+"""
+    try:
+        response_text = await _call_gemini(prompt)
+        if response_text:
+            data = _extract_json(response_text)
+            if data and "suggestion" in data and "reason" in data:
+                return data
+    except Exception as e:
+        logger.warning(f"Failed to get Gemini leave recommendation: {e}")
+        
+    return fallback
+
