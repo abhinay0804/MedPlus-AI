@@ -4,7 +4,7 @@ import { Layout } from '../../components/Layout'
 import { useAuth } from '../../context/AuthContext'
 import { api } from '../../lib/api'
 import { isValidPhone } from '../../lib/utils'
-import { User, Calendar, Shield, Save, Globe } from 'lucide-react'
+import { User, Calendar, Shield, Save, Globe, Mail } from 'lucide-react'
 import { toast } from 'sonner'
 import { CountryPhoneInput, COUNTRIES, Country } from '../../components/CountryPhoneInput'
 
@@ -178,25 +178,38 @@ export const PatientSettings: React.FC = () => {
 
         {/* Google Calendar Sync */}
         <div className="bg-white dark:bg-slate-900 rounded-xl p-6 shadow-sm border border-slate-200 dark:border-slate-800">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 rounded-lg bg-blue-50 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 dark:text-blue-400">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex items-start space-x-3">
+              <div className="w-10 h-10 rounded-lg bg-blue-50 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 dark:text-blue-400 mt-1 flex-shrink-0">
                 <Calendar className="w-5 h-5" />
               </div>
-              <div>
+              <div className="space-y-1">
                 <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Google Calendar Integration</h2>
                 <p className="text-xs text-slate-500">Automatically sync confirmed consultations directly to your Google Calendar</p>
-                <p className="text-[10px] text-amber-500 font-semibold mt-1">Note: App is in Sandbox/Testing mode. Please use the pre-configured evaluator Gmail test account to connect.</p>
+                <p className="text-[10px] text-amber-600 dark:text-amber-400 font-semibold bg-amber-500/5 px-2.5 py-1 rounded border border-amber-500/10 inline-block">
+                  Note: App is in Sandbox/Testing mode. Use our pre-configured test account, or request dev access below.
+                </p>
               </div>
             </div>
-            <button
-              onClick={handleConnectCalendar}
-              disabled={isConnectingCalendar}
-              className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors cursor-pointer disabled:opacity-50"
-            >
-              <Calendar className="w-4 h-4" />
-              <span>{isConnectingCalendar ? 'Connecting...' : 'Connect Calendar'}</span>
-            </button>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <a
+                href="mailto:namaabhinay@gmail.com?subject=MedPlus%20AI%20-%20Google%20Calendar%20Access%20Request&body=Hi%20Abhinay,%0D%0A%0D%0APlease%20add%20my%20Gmail%20account%20to%20the%20Google%20OAuth%20Test%20Users%20list.%0D%0A%0D%0AMy%20Gmail%20Address:%20"
+                className="flex items-center space-x-1.5 px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-750 dark:text-slate-200 rounded-lg text-xs font-bold transition-colors cursor-pointer border border-slate-200 dark:border-slate-700"
+              >
+                <Mail className="w-3.5 h-3.5" />
+                <span>Contact Developer</span>
+              </a>
+
+              <button
+                onClick={handleConnectCalendar}
+                disabled={isConnectingCalendar}
+                className="flex items-center space-x-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer disabled:opacity-50 shadow-sm"
+              >
+                <Calendar className="w-3.5 h-3.5" />
+                <span>{isConnectingCalendar ? 'Connecting...' : 'Connect Calendar'}</span>
+              </button>
+            </div>
           </div>
         </div>
 
