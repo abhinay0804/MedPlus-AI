@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MedPulse AI — AI-Powered Healthcare Management</title>
+    <meta name="description" content="MedPulse AI is an intelligent healthcare management platform featuring AI-powered triage, smart appointment booking, Google Calendar sync, and automated medication reminders.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Inter', sans-serif;
+            background: #0a0f1a;
+            color: #c8cdd8;
+            line-height: 1.7;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* Header */
+        .header {
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            border-bottom: 1px solid rgba(99, 179, 237, 0.15);
+            padding: 1.25rem 2rem;
+            position: sticky; top: 0; z-index: 10;
+            backdrop-filter: blur(12px);
+        }
+        .header-inner {
+            max-width: 1100px; margin: 0 auto;
+            display: flex; align-items: center; justify-content: space-between;
+        }
+        .logo { font-size: 1.5rem; font-weight: 800; color: #63b3ed; letter-spacing: -0.5px; }
+        .logo span { color: #a78bfa; }
+        .nav-links { display: flex; gap: 1.5rem; }
+        .nav-links a {
+            color: #94a3b8; text-decoration: none; font-size: 0.875rem; font-weight: 500;
+            transition: color 0.2s;
+        }
+        .nav-links a:hover { color: #63b3ed; }
+
+        /* Hero */
+        .hero {
+            text-align: center;
+            padding: 5rem 2rem 4rem;
+            position: relative;
+        }
+        .hero::before {
+            content: '';
+            position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+            width: 600px; height: 600px;
+            background: radial-gradient(circle, rgba(99, 179, 237, 0.08) 0%, transparent 70%);
+            pointer-events: none;
+        }
+        .badge {
+            display: inline-block;
+            background: rgba(99, 179, 237, 0.1);
+            border: 1px solid rgba(99, 179, 237, 0.2);
+            border-radius: 100px;
+            padding: 0.4rem 1rem;
+            font-size: 0.8rem; font-weight: 600;
+            color: #63b3ed;
+            margin-bottom: 1.5rem;
+        }
+        .hero h1 {
+            font-size: 3.25rem; font-weight: 800;
+            background: linear-gradient(135deg, #e2e8f0 0%, #63b3ed 50%, #a78bfa 100%);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            margin-bottom: 1.25rem;
+            letter-spacing: -1px;
+        }
+        .hero p {
+            font-size: 1.15rem; color: #94a3b8;
+            max-width: 640px; margin: 0 auto 2.5rem;
+        }
+        .cta-group { display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; }
+        .btn {
+            display: inline-flex; align-items: center; gap: 0.5rem;
+            padding: 0.85rem 1.75rem;
+            border-radius: 12px; font-size: 0.95rem; font-weight: 600;
+            text-decoration: none; transition: all 0.25s;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #3b82f6, #7c3aed);
+            color: #fff; border: none;
+        }
+        .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(99, 179, 237, 0.25); }
+        .btn-outline {
+            background: transparent;
+            color: #94a3b8;
+            border: 1px solid rgba(148, 163, 184, 0.3);
+        }
+        .btn-outline:hover { border-color: #63b3ed; color: #63b3ed; }
+
+        /* Features */
+        .features {
+            max-width: 1100px; margin: 0 auto;
+            padding: 3rem 2rem 5rem;
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1.5rem;
+        }
+        .feature-card {
+            background: rgba(30, 41, 59, 0.5);
+            border: 1px solid rgba(99, 179, 237, 0.08);
+            border-radius: 16px;
+            padding: 2rem;
+            transition: all 0.3s;
+        }
+        .feature-card:hover {
+            border-color: rgba(99, 179, 237, 0.2);
+            transform: translateY(-4px);
+            box-shadow: 0 12px 40px rgba(0,0,0,0.2);
+        }
+        .feature-icon {
+            font-size: 2rem; margin-bottom: 1rem;
+            width: 52px; height: 52px;
+            display: flex; align-items: center; justify-content: center;
+            background: rgba(99, 179, 237, 0.08);
+            border-radius: 12px;
+        }
+        .feature-card h3 { font-size: 1.1rem; font-weight: 600; color: #e2e8f0; margin-bottom: 0.5rem; }
+        .feature-card p { font-size: 0.9rem; color: #94a3b8; margin: 0; }
+
+        /* Footer */
+        .footer {
+            border-top: 1px solid rgba(99, 179, 237, 0.08);
+            padding: 2.5rem 2rem;
+            text-align: center;
+        }
+        .footer-links { display: flex; gap: 2rem; justify-content: center; margin-bottom: 1rem; flex-wrap: wrap; }
+        .footer-links a { color: #64748b; text-decoration: none; font-size: 0.85rem; }
+        .footer-links a:hover { color: #63b3ed; }
+        .footer-copy { color: #334155; font-size: 0.8rem; }
+
+        @media (max-width: 640px) {
+            .hero h1 { font-size: 2rem; }
+            .hero p { font-size: 1rem; }
+            .features { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="header-inner">
+            <div class="logo">MedPulse <span>AI</span></div>
+            <div class="nav-links">
+                <a href="privacy-policy.html">Privacy Policy</a>
+                <a href="terms-of-service.html">Terms of Service</a>
+                <a href="https://github.com/abhinay0804/MedPlus-AI" target="_blank">GitHub</a>
+            </div>
+        </div>
+    </div>
+
+    <div class="hero">
+        <div class="badge">🏥 AI-Powered Healthcare Platform</div>
+        <h1>Smarter Healthcare,<br>Powered by AI</h1>
+        <p>MedPulse AI streamlines healthcare management with intelligent appointment booking, AI-powered triage, Google Calendar sync, and automated care workflows.</p>
+        <div class="cta-group">
+            <a href="https://github.com/abhinay0804/MedPlus-AI" class="btn btn-primary" target="_blank">
+                ⭐ View on GitHub
+            </a>
+            <a href="mailto:namaabhinay@gmail.com" class="btn btn-outline">
+                ✉️ Contact Developer
+            </a>
+        </div>
+    </div>
+
+    <div class="features">
+        <div class="feature-card">
+            <div class="feature-icon">🤖</div>
+            <h3>AI-Powered Triage</h3>
+            <p>Gemini AI analyzes patient symptoms, generates urgency assessments, and creates comprehensive pre-visit summaries for doctors.</p>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon">📅</div>
+            <h3>Google Calendar Sync</h3>
+            <p>Appointments automatically sync to your Google Calendar. Rescheduling and cancellations update in real-time.</p>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon">💊</div>
+            <h3>Smart Prescriptions</h3>
+            <p>AI-analyzed prescriptions with medication insights, interaction warnings, and automated daily intake reminders via email.</p>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon">🔄</div>
+            <h3>Auto-Rescheduling</h3>
+            <p>When a doctor takes leave, the system automatically finds same-specialty alternatives and reschedules affected patients.</p>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon">📊</div>
+            <h3>Admin Intelligence</h3>
+            <p>Rich analytics dashboard with AI-powered leave recommendations, booking conflict metrics, and urgency breakdowns.</p>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon">📧</div>
+            <h3>Automated Notifications</h3>
+            <p>Email confirmations, medication reminders, rescheduling notices, and cancellation alerts — fully automated.</p>
+        </div>
+    </div>
+
+    <div class="footer">
+        <div class="footer-links">
+            <a href="privacy-policy.html">Privacy Policy</a>
+            <a href="terms-of-service.html">Terms of Service</a>
+            <a href="https://github.com/abhinay0804/MedPlus-AI" target="_blank">GitHub Repository</a>
+            <a href="mailto:namaabhinay@gmail.com">Contact</a>
+        </div>
+        <p class="footer-copy">&copy; 2026 MedPulse AI by Abhinay Chowdhary. All rights reserved.</p>
+    </div>
+</body>
+</html>
