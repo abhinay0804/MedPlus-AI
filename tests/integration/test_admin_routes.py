@@ -188,9 +188,118 @@ async def test_working_hours_approval_flow():
         assert res.status_code == 200
         assert res.json()["status"] == "APPROVED"
 
-        # 10. Check if doctor settings updated
         res = await ac.get("/api/doctor/settings", headers=doc_headers)
         assert res.status_code == 200
         settings_data = res.json()
         assert settings_data["profile"]["slot_duration_minutes"] == 15
         assert settings_data["profile"]["working_hours"]["mon"]["start"] == "11:00"
+
+
+@pytest.mark.asyncio
+async def test_admin_control_center_endpoints():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        # 1. Register and login admin
+        reg_admin = {
+            "email": "controladmin@healthcare.com",
+            "password": "AdminPassword123!",
+            "full_name": "Control Admin",
+            "role": "ADMIN"
+        }
+        res = await ac.post("/api/auth/register", json=reg_admin)
+        assert res.status_code == 201
+        admin_token = res.json()["access_token"]
+        admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+        # 2. Register and login patient
+        reg_patient = {
+            "email": "controlpatient@healthcare.com",
+            "password": "PatientPassword123!",
+            "full_name": "Control Patient",
+            "role": "PATIENT"
+        }
+        res = await ac.post("/api/auth/register", json=reg_patient)
+        assert res.status_code == 201
+        patient_token = res.json()["access_token"]
+        patient_headers = {"Authorization": f"Bearer {patient_token}"}
+
+        # 3. Test Audit Logs endpoint
+        res = await ac.get("/api/admin/audit-logs", headers=admin_headers)
+        assert res.status_code == 200
+        logs = res.json()
+        assert isinstance(logs, list)
+
+        # 4. Test Telemetry endpoint
+        res = await ac.get("/api/admin/telemetry", headers=admin_headers)
+        assert res.status_code == 200
+        tele = res.json()
+        assert "cpu_usage" in tele
+        assert "memory_usage" in tele
+        assert "redis_status" in tele
+        assert "celery_status" in tele
+
+        # 5. Test SMTP logs endpoint
+        res = await ac.get("/api/admin/smtp-logs", headers=admin_headers)
+        assert res.status_code == 200
+        smtp_logs = res.json()
+        assert isinstance(smtp_logs, list)
+
+        # 6. Test AI Insights endpoint
+        res = await ac.post("/api/admin/ai-insights", json={}, headers=admin_headers)
+        assert res.status_code == 200
+        insights = res.json()
+        assert "insights_html" in insights
+        assert "peak_hours_prediction" in insights
+
+        # 7. Test patient access restriction (403)
+        res = await ac.get("/api/admin/telemetry", headers=patient_headers)
+        assert res.status_code == 403
+
+        # 8. Create a doctor to send note to
+        doc_payload = {
+            "email": "noted.doc@healthcare.com",
+            "password": "DoctorPassword123!",
+            "full_name": "Dr. Noted Doctor",
+            "specialisation": "Neurology",
+            "working_hours": {
+                "mon": {"start": "09:00", "end": "17:00"}
+            },
+            "slot_duration_minutes": 30
+        }
+        res = await ac.post("/api/admin/doctors", json=doc_payload, headers=admin_headers)
+        assert res.status_code == 201
+        doc_id = res.json()["id"]
+
+        # 9. Admin sends note to doctor
+        note_payload = {
+            "subject": "Urgent Equipment Recall",
+            "body": "Please stop using cardiology scanner 3.",
+            "priority": "URGENT"
+        }
+        res = await ac.post(f"/api/admin/doctors/{doc_id}/notes", json=note_payload, headers=admin_headers)
+        assert res.status_code == 200
+        assert res.json()["subject"] == "Urgent Equipment Recall"
+        note_id = res.json()["id"]
+
+        # 10. Admin retrieves sent notes
+        res = await ac.get(f"/api/admin/doctors/{doc_id}/notes", headers=admin_headers)
+        assert res.status_code == 200
+        notes = res.json()
+        assert len(notes) >= 1
+        assert notes[0]["id"] == note_id
+
+        # 11. Admin retrieves patient directory
+        res = await ac.get("/api/admin/patients", headers=admin_headers)
+        assert res.status_code == 200
+        patients = res.json()
+        assert len(patients) >= 1
+
+        # 12. Admin retrieves appointments list
+        res = await ac.get("/api/admin/appointments", headers=admin_headers)
+        assert res.status_code == 200
+        assert isinstance(res.json(), list)
+
+        # 13. Test database reset cleans up new tables
+        res = await ac.post("/api/admin/reset-db", headers=admin_headers)
+        assert res.status_code == 200
+        assert res.json()["success"] is True
+

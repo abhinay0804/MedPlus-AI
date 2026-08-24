@@ -10,11 +10,15 @@ from server.repositories.user_repository import UserRepository
 from server.repositories.doctor_repository import DoctorRepository
 from server.schemas.doctor_schemas import (
     DoctorCreate, DoctorUpdate, DoctorResponse,
-    LeaveCreate, LeaveResponse, AdminDashboardStats
+    LeaveCreate, LeaveResponse, AdminDashboardStats,
+    AdminNoteCreate, AdminNoteResponse
 )
 from server.schemas.auth_schemas import UserResponse
 from server.auth import require_role
-from server.database.models import User, UserRole, DoctorProfile, Appointment, AppointmentStatus, DoctorLeave
+from server.database.models import (
+    User, UserRole, DoctorProfile, Appointment, AppointmentStatus,
+    DoctorLeave, AuditLog, EmailOTP, AdminNote, InAppNotification
+)
 from microservices.tasks import handle_doctor_leave_task
 
 logger = logging.getLogger(__name__)
@@ -88,8 +92,13 @@ async def get_doctor_detail(id: str, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Doctor profile not found")
     return profile
 
-@router.put("/doctors/{id}", response_model=DoctorResponse, dependencies=[admin_guard])
-async def update_doctor_profile(id: str, data: DoctorUpdate, db: AsyncSession = Depends(get_db)):
+@router.put("/doctors/{id}", response_model=DoctorResponse)
+async def update_doctor_profile(
+    id: str,
+    data: DoctorUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.ADMIN))
+):
     """Admin updates doctor specialisation, working hours, slot duration, or status."""
     doc_repo = DoctorRepository(db)
     profile = await doc_repo.get_by_id(id)
@@ -110,6 +119,35 @@ async def update_doctor_profile(id: str, data: DoctorUpdate, db: AsyncSession = 
         is_active=data.is_active
     )
     
+    # Audit log and email dispatch if schedule changed
+    if data.working_hours is not None or data.slot_duration_minutes is not None:
+        audit = AuditLog(
+            action="ADMIN_OVERRIDE_SCHEDULE",
+            target_type="DoctorProfile",
+            target_id=id,
+            user_id=current_user.id,
+            details={
+                "doctor_id": id,
+                "doctor_name": profile.user.full_name,
+                "working_hours": working_hours_dict,
+                "slot_duration_minutes": data.slot_duration_minutes
+            }
+        )
+        db.add(audit)
+        
+        from microservices.tasks import send_email_task
+        from server.routes.patient_routes import safe_dispatch
+        safe_dispatch(
+            send_email_task,
+            profile.user.email,
+            "Your Clinical Schedule has been updated by Administration",
+            "generic_notification",
+            {
+                "title": "Clinical Schedule Updated",
+                "message": f"Hello Dr. {profile.user.full_name},\n\nPlease note that your clinical working hours and/or slot duration has been updated directly by the hospital administration.\n\nKindly review your updated availability in the Doctor Portal.\n\nBest regards,\nMedPulse AI Administration"
+            }
+        )
+
     # Update associated user fields if provided
     if data.full_name or data.phone:
         user_repo = UserRepository(db)
@@ -556,3 +594,628 @@ async def resolve_doctor_leave_request(
         
     await db.commit()
     return {"success": True, "message": f"Leave request resolved successfully as {data.status}."}
+
+
+@router.get("/audit-logs", dependencies=[admin_guard])
+async def get_audit_logs(
+    role: Optional[str] = None,
+    action: Optional[str] = None,
+    search: Optional[str] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """Fetch HIPAA system audit logs from database."""
+    from server.database.models import AuditLog
+    from sqlalchemy import text
+    
+    stmt = (
+        select(AuditLog, User)
+        .outerjoin(User, AuditLog.user_id == User.id)
+        .order_by(AuditLog.created_at.desc())
+    )
+    result = await db.execute(stmt)
+    
+    logs_out = []
+    for audit, user in result:
+        actor_role = "SYSTEM"
+        user_email = "SYSTEM"
+        if user:
+            user_email = user.email
+            actor_role = user.role.value if hasattr(user.role, 'value') else str(user.role)
+        elif audit.action.startswith("SYSTEM_") or (audit.details and "AI" in str(audit.details)):
+            actor_role = "SYSTEM"
+        
+        details_text = ""
+        if isinstance(audit.details, dict):
+            details_text = audit.details.get("message") or audit.details.get("reason") or audit.details.get("details") or str(audit.details)
+        elif isinstance(audit.details, str):
+            details_text = audit.details
+            
+        logs_out.append({
+            "id": audit.id,
+            "action": audit.action,
+            "user": user_email,
+            "actorRole": actor_role,
+            "target": f"{audit.target_type} #{audit.target_id}" if audit.target_type else "System",
+            "timestamp": audit.created_at.strftime("%Y-%m-%d %H:%M:%S"),
+            "details": details_text or f"Action {audit.action} executed."
+        })
+        
+    if role and role != "ALL":
+        logs_out = [l for l in logs_out if l["actorRole"] == role]
+    if search:
+        s = search.lower()
+        logs_out = [l for l in logs_out if s in l["action"].lower() or s in l["details"].lower() or s in l["user"].lower()]
+        
+    return logs_out
+
+
+@router.post("/ai-insights", dependencies=[admin_guard])
+async def get_ai_insights(db: AsyncSession = Depends(get_db)):
+    """Analyze hospital statistics and invoke Gemini for staffing/operational insights."""
+    from server.services.llm_service import generate_clinical_insights
+    from server.database.models import SymptomForm, UrgencyLevel
+    
+    total_doctors = (await db.execute(select(func.count(DoctorProfile.id)))).scalar() or 0
+    active_doctors = (await db.execute(select(func.count(DoctorProfile.id)).where(DoctorProfile.is_active == True))).scalar() or 0
+    total_patients = (await db.execute(select(func.count(User.id)).where(User.role == UserRole.PATIENT))).scalar() or 0
+    total_appointments = (await db.execute(select(func.count(Appointment.id)))).scalar() or 0
+    
+    completed_appointments = (await db.execute(select(func.count(Appointment.id)).where(Appointment.status == AppointmentStatus.COMPLETED))).scalar() or 0
+    confirmed_appointments = (await db.execute(select(func.count(Appointment.id)).where(Appointment.status == AppointmentStatus.CONFIRMED))).scalar() or 0
+    pending_appointments = (await db.execute(select(func.count(Appointment.id)).where(Appointment.status == AppointmentStatus.PENDING_APPROVAL))).scalar() or 0
+    cancelled_appointments = (await db.execute(select(func.count(Appointment.id)).where(Appointment.status == AppointmentStatus.CANCELLED))).scalar() or 0
+    
+    critical_urgency = (await db.execute(select(func.count(SymptomForm.id)).where(SymptomForm.urgency_level == UrgencyLevel.HIGH))).scalar() or 0
+    medium_urgency = (await db.execute(select(func.count(SymptomForm.id)).where(SymptomForm.urgency_level == UrgencyLevel.MEDIUM))).scalar() or 0
+    low_urgency = (await db.execute(select(func.count(SymptomForm.id)).where(SymptomForm.urgency_level == UrgencyLevel.LOW))).scalar() or 0
+    
+    specialties_result = await db.execute(
+        select(DoctorProfile.specialisation, func.count(Appointment.id))
+        .join(Appointment, DoctorProfile.id == Appointment.doctor_id)
+        .group_by(DoctorProfile.specialisation)
+    )
+    specialty_distribution = {row[0]: row[1] for row in specialties_result}
+    
+    metrics = {
+        "total_doctors": total_doctors,
+        "active_doctors": active_doctors,
+        "total_patients": total_patients,
+        "total_appointments": total_appointments,
+        "completed_appointments": completed_appointments,
+        "confirmed_appointments": confirmed_appointments,
+        "pending_appointments": pending_appointments,
+        "cancelled_appointments": cancelled_appointments,
+        "critical_urgency": critical_urgency,
+        "medium_urgency": medium_urgency,
+        "low_urgency": low_urgency,
+        "specialty_distribution": specialty_distribution
+    }
+    
+    insights = await generate_clinical_insights(metrics)
+    return insights
+
+
+@router.get("/telemetry", dependencies=[admin_guard])
+async def get_telemetry(db: AsyncSession = Depends(get_db)):
+    """Return system health metrics (simulated gauges)."""
+    import random
+    from server.database.models import AuditLog
+    
+    total_users = (await db.execute(select(func.count(User.id)))).scalar() or 0
+    total_appointments = (await db.execute(select(func.count(Appointment.id)))).scalar() or 0
+    total_audit_logs = (await db.execute(select(func.count(AuditLog.id)))).scalar() or 0
+    
+    redis_status = "HEALTHY"
+    try:
+        import redis
+        from server.config import settings
+        r = redis.from_url(settings.REDIS_URL)
+        r.ping()
+    except Exception:
+        redis_status = "UNAVAILABLE"
+        
+    return {
+        "cpu_usage": random.randint(15, 35),
+        "memory_usage": random.randint(40, 55),
+        "db_rows": total_users + total_appointments + total_audit_logs,
+        "redis_status": redis_status,
+        "celery_status": "HEALTHY" if redis_status == "HEALTHY" else "STALLED",
+        "api_response_time_ms": random.randint(10, 45)
+    }
+
+
+@router.get("/smtp-logs", dependencies=[admin_guard])
+async def get_smtp_logs():
+    """Return the recent simulated SMTP email notifications dispatch log."""
+    from server.services.email_service import EMAIL_LOGS
+    return list(reversed(EMAIL_LOGS))
+
+
+@router.post("/reset-db", dependencies=[admin_guard])
+async def reset_database(db: AsyncSession = Depends(get_db)):
+    """Reset the SQLite database tables and re-seed the default data."""
+    from sqlalchemy import text
+    try:
+        # Delete all records
+        await db.execute(text("DELETE FROM in_app_notifications"))
+        await db.execute(text("DELETE FROM admin_notes"))
+        await db.execute(text("DELETE FROM email_otps"))
+        await db.execute(text("DELETE FROM audit_logs"))
+        await db.execute(text("DELETE FROM doctor_reviews"))
+        await db.execute(text("DELETE FROM post_visit_notes"))
+        await db.execute(text("DELETE FROM symptom_forms"))
+        await db.execute(text("DELETE FROM appointments"))
+        await db.execute(text("DELETE FROM doctor_leaves"))
+        await db.execute(text("DELETE FROM doctor_profiles"))
+        await db.execute(text("DELETE FROM users"))
+        await db.commit()
+        
+        # Re-seed
+        from scripts.seed_db import seed
+        await seed()
+        
+        return {"success": True, "message": "Database reset and re-seeded successfully!"}
+    except Exception as e:
+        logger.error(f"Failed to reset database: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to reset database: {str(e)}"
+        )
+
+# --- Admin to Doctor Notes & Directives ---
+
+@router.post("/doctors/{id}/notes", response_model=AdminNoteResponse)
+async def create_admin_note(
+    id: str,
+    data: AdminNoteCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.ADMIN))
+):
+    """Admin sends a priority note/directive to a doctor."""
+    doc_repo = DoctorRepository(db)
+    doctor = await doc_repo.get_by_id(id)
+    if not doctor:
+        raise HTTPException(status_code=404, detail="Doctor profile not found")
+
+    note = AdminNote(
+        doctor_id=id,
+        subject=data.subject,
+        body=data.body,
+        priority=data.priority,
+        is_read=False
+    )
+    db.add(note)
+
+    audit = AuditLog(
+        action="ADMIN_SEND_NOTE",
+        target_type="DoctorProfile",
+        target_id=id,
+        user_id=current_user.id,
+        details={
+            "doctor_name": doctor.user.full_name,
+            "subject": data.subject,
+            "priority": data.priority
+        }
+    )
+    db.add(audit)
+
+    notif = InAppNotification(
+        user_id=doctor.user_id,
+        title=f"New Directive from Administration ({data.priority})",
+        body=f"Subject: {data.subject}",
+        type="admin_note",
+        link="/doctor/dashboard"
+    )
+    db.add(notif)
+
+    await db.commit()
+    await db.refresh(note)
+    return note
+
+@router.get("/doctors/{id}/notes", response_model=List[AdminNoteResponse], dependencies=[admin_guard])
+async def get_admin_notes(id: str, db: AsyncSession = Depends(get_db)):
+    """Retrieve all admin notes sent to a specific doctor."""
+    query = select(AdminNote).where(AdminNote.doctor_id == id).order_by(AdminNote.created_at.desc())
+    notes = (await db.execute(query)).scalars().all()
+    return notes
+
+# --- Admin Patient Directory ---
+
+@router.get("/patients", dependencies=[admin_guard])
+async def get_patient_directory(
+    search: Optional[str] = None,
+    skip: int = 0,
+    limit: int = 100,
+    db: AsyncSession = Depends(get_db)
+):
+    """Admin retrieves registered patient list with total consultation counts and last visit dates."""
+    query = select(User).where(User.role == UserRole.PATIENT)
+    if search:
+        query = query.where(
+            (User.full_name.ilike(f"%{search}%")) |
+            (User.email.ilike(f"%{search}%")) |
+            (User.phone.ilike(f"%{search}%"))
+        )
+    query = query.order_by(User.created_at.desc()).offset(skip).limit(limit)
+    patients = (await db.execute(query)).scalars().all()
+
+    results = []
+    for p in patients:
+        appt_query = select(Appointment.status, func.count(Appointment.id)).where(Appointment.patient_id == p.id).group_by(Appointment.status)
+        appt_stats = (await db.execute(appt_query)).all()
+        stats_dict = {status.value if hasattr(status, 'value') else str(status): count for status, count in appt_stats}
+
+        last_visit_query = select(Appointment.slot_start).where(
+            Appointment.patient_id == p.id,
+            Appointment.status == AppointmentStatus.COMPLETED
+        ).order_by(Appointment.slot_start.desc()).limit(1)
+        last_visit = (await db.execute(last_visit_query)).scalar_one_or_none()
+
+        results.append({
+            "id": p.id,
+            "full_name": p.full_name,
+            "email": p.email,
+            "phone": p.phone,
+            "country": p.country,
+            "created_at": p.created_at,
+            "stats": stats_dict,
+            "last_visit": last_visit
+        })
+    return results
+
+# --- Admin Appointment Command Center ---
+
+from pydantic import BaseModel
+class AdminReassignInput(BaseModel):
+    new_doctor_id: str
+    new_slot_start: Optional[datetime] = None
+
+class AvailableDoctorResponse(BaseModel):
+    id: str
+    full_name: str
+    specialisation: str
+
+@router.get("/appointments/{id}/available-doctors", response_model=List[AvailableDoctorResponse])
+async def get_available_doctors_for_reassign(
+    id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.ADMIN))
+):
+    """List all available active/non-suspended doctors of the same specialty for this appointment's slot."""
+    from sqlalchemy.orm import selectinload
+    
+    # 1. Get original appointment
+    appt_query = select(Appointment).options(
+        selectinload(Appointment.doctor)
+    ).where(Appointment.id == id)
+    appt = (await db.execute(appt_query)).scalar_one_or_none()
+    if not appt:
+        raise HTTPException(status_code=404, detail="Appointment not found")
+        
+    specialty = appt.doctor.specialisation
+    slot_start = appt.slot_start
+    slot_end = appt.slot_end
+    
+    # Day name in lowercase (e.g. "mon", "tue")
+    day_name = slot_start.strftime("%a").lower()
+    slot_start_str = slot_start.strftime("%H:%M")
+    slot_end_str = slot_end.strftime("%H:%M")
+    target_date = slot_start.date()
+    
+    # 2. Get all other doctors in same specialty
+    docs_query = select(DoctorProfile).options(
+        selectinload(DoctorProfile.user)
+    ).where(
+        DoctorProfile.specialisation == specialty,
+        DoctorProfile.is_active == True,
+        DoctorProfile.is_suspended == False
+    )
+    all_docs = (await db.execute(docs_query)).scalars().all()
+    
+    available_docs = []
+    
+    from server.services.slot_service import _is_on_leave
+    
+    for doc in all_docs:
+        # Check working hours
+        w_hours = doc.working_hours or {}
+        day_config = w_hours.get(day_name)
+        if not day_config or not day_config.get("enabled"):
+            continue
+            
+        start_work = day_config.get("start", "09:00")
+        end_work = day_config.get("end", "17:00")
+        if not (slot_start_str >= start_work and slot_end_str <= end_work):
+            continue
+            
+        # Check leave
+        if await _is_on_leave(db, doc.id, target_date):
+            continue
+            
+        # Check overlap appointments
+        overlap_query = select(Appointment).where(
+            Appointment.doctor_id == doc.id,
+            Appointment.status.in_([AppointmentStatus.CONFIRMED, AppointmentStatus.HELD]),
+            Appointment.slot_start < slot_end,
+            Appointment.slot_end > slot_start,
+            Appointment.id != id
+        )
+        overlaps = (await db.execute(overlap_query)).scalars().all()
+        active_overlap = False
+        for o in overlaps:
+            if o.status == AppointmentStatus.HELD:
+                if o.hold_expires_at and o.hold_expires_at > datetime.utcnow():
+                    active_overlap = True
+                    break
+            else:
+                active_overlap = True
+                break
+                
+        if active_overlap:
+            continue
+            
+        available_docs.append(
+            AvailableDoctorResponse(
+                id=doc.id,
+                full_name=doc.user.full_name,
+                specialisation=doc.specialisation
+            )
+        )
+        
+    return available_docs
+
+@router.post("/doctors/{doctor_id}/reactivate")
+async def reactivate_doctor(
+    doctor_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.ADMIN))
+):
+    """Reactivate a suspended doctor profile and clear all demerit points."""
+    from sqlalchemy.orm import selectinload
+    doc_query = select(DoctorProfile).options(selectinload(DoctorProfile.user)).where(DoctorProfile.id == doctor_id)
+    doc = (await db.execute(doc_query)).scalar_one_or_none()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Doctor profile not found")
+        
+    doc.demerit_points = 0
+    doc.is_suspended = False
+    
+    # Audit log
+    audit = AuditLog(
+        action="ADMIN_REACTIVATE_DOCTOR",
+        target_type="DoctorProfile",
+        target_id=doctor_id,
+        user_id=current_user.id,
+        details=f"Admin reactivated Doctor {doc.user.full_name} and cleared demerits."
+    )
+    db.add(audit)
+    
+    # In-app notification
+    notif = InAppNotification(
+        user_id=doc.user_id,
+        title="Account Reactivated",
+        body="Your account has been reactivated by the administration. All demerit points have been cleared.",
+        type="system",
+        link="/doctor/dashboard"
+    )
+    db.add(notif)
+    
+    await db.commit()
+    
+    # Send email notification
+    from microservices.tasks import send_email_task
+    from server.routes.patient_routes import safe_dispatch
+    safe_dispatch(
+        send_email_task,
+        doc.user.email,
+        "Account Reactivated — MedPulse AI",
+        "generic_notification",
+        {
+            "title": "Account Reactivated",
+            "message": f"Hello Dr. {doc.user.full_name},\n\nYour suspended profile has been successfully reactivated by the clinic administration. Your demerit points have been reset to 0.\n\nYou can now log in, set working hours, and begin consultations again.\n\nBest regards,\nMedPulse AI Administration"
+        }
+    )
+    
+    return {"success": True, "message": "Doctor reactivated successfully"}
+
+@router.get("/appointments")
+async def get_all_appointments(
+    status: Optional[AppointmentStatus] = None,
+    doctor_id: Optional[str] = None,
+    patient_id: Optional[str] = None,
+    specialisation: Optional[str] = None,
+    search: Optional[str] = None,
+    skip: int = 0,
+    limit: int = 100,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.ADMIN))
+):
+    """Admin retrieves all appointments with comprehensive patient, doctor, and triage details."""
+    from sqlalchemy.orm import selectinload
+    
+    query = select(Appointment).join(User, Appointment.patient_id == User.id).join(DoctorProfile, Appointment.doctor_id == DoctorProfile.id)
+    
+    if status:
+        query = query.where(Appointment.status == status)
+    if doctor_id:
+        query = query.where(Appointment.doctor_id == doctor_id)
+    if patient_id:
+        query = query.where(Appointment.patient_id == patient_id)
+    if specialisation:
+        query = query.where(DoctorProfile.specialisation == specialisation)
+    if search:
+        from sqlalchemy.orm import aliased
+        DocUser = aliased(User)
+        query = query.join(DocUser, DoctorProfile.user_id == DocUser.id).where(
+            (User.full_name.ilike(f"%{search}%")) |
+            (User.email.ilike(f"%{search}%")) |
+            (DocUser.full_name.ilike(f"%{search}%"))
+        )
+        
+    query = query.order_by(Appointment.slot_start.desc()).offset(skip).limit(limit)
+    query = query.options(
+        selectinload(Appointment.doctor).selectinload(DoctorProfile.user),
+        selectinload(Appointment.patient),
+        selectinload(Appointment.symptom_form),
+        selectinload(Appointment.post_visit_note)
+    )
+    
+    appts = (await db.execute(query)).scalars().all()
+    return appts
+
+@router.post("/appointments/{id}/reassign")
+async def reassign_appointment(
+    id: str,
+    data: AdminReassignInput,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.ADMIN))
+):
+    """Admin manually reassigns an appointment to another physician (and optional slot start override)."""
+    from datetime import timedelta
+    from sqlalchemy.orm import selectinload
+    
+    query = select(Appointment).options(
+        selectinload(Appointment.doctor).selectinload(DoctorProfile.user),
+        selectinload(Appointment.patient)
+    ).where(Appointment.id == id)
+    appt = (await db.execute(query)).scalar_one_or_none()
+    if not appt:
+        raise HTTPException(status_code=404, detail="Appointment not found")
+        
+    if appt.status not in [AppointmentStatus.CONFIRMED, AppointmentStatus.PENDING_APPROVAL, AppointmentStatus.HELD]:
+        raise HTTPException(status_code=400, detail="Only held, confirmed, or pending appointments can be reassigned")
+        
+    doc_repo = DoctorRepository(db)
+    new_doc = await doc_repo.get_by_id(data.new_doctor_id)
+    if not new_doc:
+        raise HTTPException(status_code=404, detail="New doctor not found")
+        
+    old_doctor_name = appt.doctor.user.full_name
+    old_doctor_email = appt.doctor.user.email
+    old_slot_start = appt.slot_start
+    
+    slot_start = data.new_slot_start or appt.slot_start
+    slot_end = slot_start + timedelta(minutes=new_doc.slot_duration_minutes)
+    
+    from server.services.slot_service import _is_on_leave
+    target_date = slot_start.date()
+    if await _is_on_leave(db, data.new_doctor_id, target_date):
+        raise HTTPException(status_code=400, detail="The selected doctor is on leave on this date")
+        
+    overlap_query = select(Appointment).where(
+        Appointment.doctor_id == data.new_doctor_id,
+        Appointment.status == AppointmentStatus.CONFIRMED,
+        Appointment.slot_start < slot_end,
+        Appointment.slot_end > slot_start,
+        Appointment.id != id
+    )
+    overlap = (await db.execute(overlap_query)).scalars().all()
+    if overlap:
+        raise HTTPException(status_code=400, detail="The selected doctor has an overlapping confirmed appointment at this slot")
+        
+    calendar_event_id = None
+    from server.database.models import CalendarEvent
+    cal_event_query = select(CalendarEvent).where(CalendarEvent.appointment_id == id)
+    cal_event = (await db.execute(cal_event_query)).scalar_one_or_none()
+    if cal_event:
+        from microservices.tasks import sync_calendar_event_task
+        from server.routes.patient_routes import safe_dispatch
+        safe_dispatch(sync_calendar_event_task, id, "delete")
+        
+    appt.doctor_id = data.new_doctor_id
+    appt.slot_start = slot_start
+    appt.slot_end = slot_end
+    appt.reassigned_by_admin = True
+    
+    import random
+    appt.start_otp = f"{random.randint(1000, 9999)}"
+    
+    audit = AuditLog(
+        action="ADMIN_REASSIGN_APPOINTMENT",
+        target_type="Appointment",
+        target_id=id,
+        user_id=current_user.id,
+        details={
+            "appointment_id": id,
+            "patient_name": appt.patient.full_name,
+            "old_doctor": old_doctor_name,
+            "new_doctor": new_doc.user.full_name,
+            "slot_start": slot_start.isoformat()
+        }
+    )
+    db.add(audit)
+    
+    notif_patient = InAppNotification(
+        user_id=appt.patient_id,
+        title="Appointment Reassigned by Administration",
+        body=f"Your consultation has been reassigned to Dr. {new_doc.user.full_name} on {slot_start.strftime('%Y-%m-%d %H:%M UTC')}.",
+        type="appointment",
+        link="/patient/appointments"
+    )
+    db.add(notif_patient)
+    
+    notif_new_doc = InAppNotification(
+        user_id=new_doc.user_id,
+        title="New Reassigned Consultation",
+        body=f"You have been assigned a consultation with patient {appt.patient.full_name} on {slot_start.strftime('%Y-%m-%d %H:%M UTC')}.",
+        type="appointment",
+        link="/doctor/dashboard"
+    )
+    db.add(notif_new_doc)
+    
+    notif_old_doc = InAppNotification(
+        user_id=appt.doctor.user_id,
+        title="Consultation Reassigned (Cancelled)",
+        body=f"Your consultation on {old_slot_start.strftime('%Y-%m-%d %H:%M UTC')} has been reassigned to another physician.",
+        type="appointment",
+        link="/doctor/dashboard"
+    )
+    db.add(notif_old_doc)
+    
+    await db.commit()
+    
+    if cal_event:
+        from microservices.tasks import sync_calendar_event_task
+        from server.routes.patient_routes import safe_dispatch
+        safe_dispatch(sync_calendar_event_task, id, "create")
+        
+    from microservices.tasks import send_email_task
+    from server.routes.patient_routes import safe_dispatch
+    
+    safe_dispatch(
+        send_email_task,
+        appt.patient.email,
+        "Appointment Reassigned - MedPulse AI",
+        "reschedule_notice",
+        {
+            "patient_name": appt.patient.full_name,
+            "doctor_name": new_doc.user.full_name,
+            "old_slot_start": old_slot_start.strftime("%Y-%m-%d %H:%M UTC"),
+            "new_slot_start": slot_start.strftime("%Y-%m-%d %H:%M UTC"),
+            "appointment_id": id,
+        }
+    )
+    
+    safe_dispatch(
+        send_email_task,
+        new_doc.user.email,
+        "New Consultation Assigned - MedPulse AI",
+        "generic_notification",
+        {
+            "title": "New Appointment Assigned",
+            "message": f"Hello Dr. {new_doc.user.full_name},\n\nYou have been assigned a new medical consultation by the administration.\n\nPatient Name: {appt.patient.full_name}\nTime: {slot_start.strftime('%Y-%m-%d %H:%M UTC')}\n\nPlease review your dashboard for details.\n\nBest regards,\nMedPulse AI Administration"
+        }
+    )
+    
+    safe_dispatch(
+        send_email_task,
+        old_doctor_email,
+        "Consultation Reassigned Notice - MedPulse AI",
+        "generic_notification",
+        {
+            "title": "Consultation Reassigned",
+            "message": f"Hello Dr. {old_doctor_name},\n\nPlease note that your consultation scheduled for {old_slot_start.strftime('%Y-%m-%d %H:%M UTC')} has been reassigned to another doctor by the administration.\n\nThis slot is now open and available for booking.\n\nBest regards,\nMedPulse AI Administration"
+        }
+    )
+    
+    return {"status": "success", "message": "Appointment reassigned successfully"}

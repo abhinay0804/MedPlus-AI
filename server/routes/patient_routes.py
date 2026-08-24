@@ -471,34 +471,37 @@ async def cancel_appointment(
     doctor_email = old_appt.doctor.user.email if old_appt.doctor and old_appt.doctor.user else None
     slot_time_str = old_appt.slot_start.strftime("%Y-%m-%d %I:%M %p")
 
+    was_held = old_appt.status == AppointmentStatus.HELD
+
     appt = await release_slot(db, appointment_id, patient_id=current_user.id)
     await db.commit()
     await db.refresh(appt)
 
-    # Dispatch Celery task: cancellation email to patient
-    safe_dispatch(
-        send_email_task,
-        to_email=current_user.email,
-        subject="Appointment Cancelled",
-        template_name="cancellation_notice",
-        context={"appointment_id": appt.id, "patient_name": current_user.full_name},
-    )
-
-    # Dispatch Celery task: cancellation email to doctor
-    if doctor_email:
+    if not was_held:
+        # Dispatch Celery task: cancellation email to patient
         safe_dispatch(
             send_email_task,
-            to_email=doctor_email,
-            subject="Patient Appointment Cancelled",
+            to_email=current_user.email,
+            subject="Appointment Cancelled",
             template_name="cancellation_notice",
-            context={
-                "appointment_id": appt.id,
-                "patient_name": current_user.full_name,
-                "extra_message": f"Your patient {current_user.full_name} has cancelled the appointment scheduled at {slot_time_str}.",
-            },
+            context={"appointment_id": appt.id, "patient_name": current_user.full_name},
         )
 
-    safe_dispatch(sync_calendar_event_task, appt.id, "delete")
+        # Dispatch Celery task: cancellation email to doctor
+        if doctor_email:
+            safe_dispatch(
+                send_email_task,
+                to_email=doctor_email,
+                subject="Patient Appointment Cancelled",
+                template_name="cancellation_notice",
+                context={
+                    "appointment_id": appt.id,
+                    "patient_name": current_user.full_name,
+                    "extra_message": f"Your patient {current_user.full_name} has cancelled the appointment scheduled at {slot_time_str}.",
+                },
+            )
+
+        safe_dispatch(sync_calendar_event_task, appt.id, "delete")
     return appt
 
 
@@ -593,3 +596,250 @@ async def submit_appointment_review(
     db.add(review)
     await db.commit()
     return {"message": "Review submitted successfully"}
+
+# --- Prescription & Consultation Visit Summary PDF ---
+
+def generate_prescription_pdf(appt) -> bytes:
+    from reportlab.lib.pagesizes import letter
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, KeepTogether
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib import colors
+    from io import BytesIO
+    import json
+
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=letter,
+        rightMargin=40,
+        leftMargin=40,
+        topMargin=40,
+        bottomMargin=40
+    )
+    
+    story = []
+    styles = getSampleStyleSheet()
+    
+    title_style = ParagraphStyle(
+        'DocTitle',
+        parent=styles['Heading1'],
+        fontName='Helvetica-Bold',
+        fontSize=24,
+        leading=28,
+        textColor=colors.HexColor("#0f766e"), # Teal-700
+        alignment=1 # Center
+    )
+    
+    subtitle_style = ParagraphStyle(
+        'DocSubTitle',
+        parent=styles['Normal'],
+        fontName='Helvetica-Oblique',
+        fontSize=10,
+        leading=12,
+        textColor=colors.HexColor("#64748b"), # Slate-500
+        alignment=1
+    )
+    
+    heading_style = ParagraphStyle(
+        'SectionHeading',
+        parent=styles['Heading2'],
+        fontName='Helvetica-Bold',
+        fontSize=14,
+        leading=18,
+        textColor=colors.HexColor("#0f766e"),
+        spaceBefore=12,
+        spaceAfter=6
+    )
+    
+    body_style = ParagraphStyle(
+        'BodyText',
+        parent=styles['Normal'],
+        fontName='Helvetica',
+        fontSize=10,
+        leading=14,
+        textColor=colors.HexColor("#334155") # Slate-700
+    )
+    
+    bold_body_style = ParagraphStyle(
+        'BoldBodyText',
+        parent=body_style,
+        fontName='Helvetica-Bold'
+    )
+
+    # 1. Header Section
+    story.append(Paragraph("MedPulse AI — Smart Clinic", title_style))
+    story.append(Paragraph("Dynamic Medical Consultation & Prescription Ticket", subtitle_style))
+    story.append(Spacer(1, 15))
+    
+    # 2. Patient & Doctor Info Table
+    info_data = [
+        [
+            Paragraph("<b>PATIENT DETAILS</b>", bold_body_style),
+            Paragraph("<b>DOCTOR DETAILS</b>", bold_body_style)
+        ],
+        [
+            Paragraph(f"Name: {appt.patient.full_name}", body_style),
+            Paragraph(f"Name: Dr. {appt.doctor.user.full_name}", body_style)
+        ],
+        [
+            Paragraph(f"Email: {appt.patient.email}", body_style),
+            Paragraph(f"Specialty: {appt.doctor.specialisation}", body_style)
+        ],
+        [
+            Paragraph(f"Phone: {appt.patient.phone or 'N/A'}", body_style),
+            Paragraph(f"Consultation Date: {appt.slot_start.strftime('%Y-%m-%d %H:%M UTC')}", body_style)
+        ]
+    ]
+    
+    info_table = Table(info_data, colWidths=[260, 260])
+    info_table.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#f1f5f9")),
+        ('PADDING', (0,0), (-1,-1), 8),
+        ('BOTTOMPADDING', (0,0), (-1,0), 6),
+        ('TOPPADDING', (0,0), (-1,0), 6),
+        ('LINEBELOW', (0,0), (-1,0), 1, colors.HexColor("#cbd5e1")),
+        ('BOX', (0,0), (-1,-1), 1, colors.HexColor("#e2e8f0")),
+        ('VALIGN', (0,0), (-1,-1), 'TOP'),
+    ]))
+    story.append(info_table)
+    story.append(Spacer(1, 15))
+    
+    # 3. Chief Complaints / Symptoms
+    story.append(Paragraph("Chief Complaints & Symptoms", heading_style))
+    symptoms_text = appt.symptom_form.symptoms_text if appt.symptom_form else "No symptoms registered."
+    story.append(Paragraph(symptoms_text, body_style))
+    story.append(Spacer(1, 10))
+    
+    # 4. Clinical Notes
+    story.append(Paragraph("Clinical Examination & Doctor Notes", heading_style))
+    notes_text = appt.post_visit_note.doctor_notes if appt.post_visit_note else "Pending clinical notes."
+    story.append(Paragraph(notes_text, body_style))
+    story.append(Spacer(1, 10))
+    
+    # 5. Prescription Text
+    story.append(Paragraph("Prescription & Medication Plan", heading_style))
+    rx_text = appt.post_visit_note.prescription_text if appt.post_visit_note else "No medications prescribed."
+    story.append(Paragraph(rx_text.replace("\n", "<br/>") if rx_text else "No medications prescribed.", body_style))
+    story.append(Spacer(1, 15))
+    
+    # 6. AI Care Summary
+    if appt.post_visit_note and appt.post_visit_note.patient_summary:
+        try:
+            summary_dict = json.loads(appt.post_visit_note.patient_summary)
+            if isinstance(summary_dict, dict):
+                story.append(Paragraph("🤖 AI Patient Care Guidelines", heading_style))
+                
+                if "diagnosis" in summary_dict:
+                    story.append(Paragraph(f"<b>Diagnosis Summary:</b> {summary_dict['diagnosis']}", body_style))
+                    story.append(Spacer(1, 4))
+                if "what_to_do" in summary_dict:
+                    todo_items = "<br/>".join([f"• {item}" for item in summary_dict['what_to_do']])
+                    story.append(Paragraph(f"<b>Recommended Steps:</b><br/>{todo_items}", body_style))
+                    story.append(Spacer(1, 4))
+                if "what_to_avoid" in summary_dict:
+                    avoid_items = "<br/>".join([f"• {item}" for item in summary_dict['what_to_avoid']])
+                    story.append(Paragraph(f"<b>What to Avoid:</b><br/>{avoid_items}", body_style))
+            else:
+                story.append(Paragraph("🤖 AI Patient Care Guidelines", heading_style))
+                story.append(Paragraph(appt.post_visit_note.patient_summary.replace("\n", "<br/>"), body_style))
+        except Exception:
+            story.append(Paragraph("🤖 AI Patient Care Guidelines", heading_style))
+            story.append(Paragraph(appt.post_visit_note.patient_summary.replace("\n", "<br/>"), body_style))
+            
+    # 7. Signature block
+    sign_data = [
+        [
+            Paragraph("<b>MedPulse Verification</b><br/>OTP Check: Verified<br/>Status: Completed", body_style),
+            Paragraph("<b>Signature</b><br/><br/>_______________________<br/>Consulting Physician", body_style)
+        ]
+    ]
+    sign_table = Table(sign_data, colWidths=[260, 260])
+    sign_table.setStyle(TableStyle([
+        ('VALIGN', (0,0), (-1,-1), 'TOP'),
+        ('TOPPADDING', (0,0), (-1,-1), 15),
+    ]))
+    
+    story.append(Spacer(1, 20))
+    story.append(KeepTogether([sign_table]))
+    
+    def add_footer(canvas, doc):
+        canvas.saveState()
+        canvas.setFont('Helvetica', 8)
+        canvas.setFillColor(colors.HexColor("#94a3b8"))
+        canvas.drawString(40, 20, f"MedPulse AI Smart Clinic System — Ticket ID: {appt.id}")
+        canvas.drawRightString(doc.pagesize[0] - 40, 20, "Page 1 of 1")
+        canvas.restoreState()
+        
+    doc.build(story, onFirstPage=add_footer)
+    pdf_bytes = buffer.getvalue()
+    buffer.close()
+    return pdf_bytes
+
+from fastapi.responses import Response
+
+@router.get("/appointments/{appointment_id}/pdf")
+async def download_prescription_pdf(
+    appointment_id: str,
+    token: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+    request: Request = None
+):
+    """Generate and return a beautifully formatted PDF prescription for a completed consultation."""
+    jwt_token = token
+    if not jwt_token and request:
+        auth_header = request.headers.get("Authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            jwt_token = auth_header.split(" ")[1]
+            
+    if not jwt_token:
+        raise HTTPException(status_code=401, detail="Authentication credentials missing")
+        
+    from server.auth import decode_token
+    from server.config import settings
+    try:
+        payload = decode_token(jwt_token, settings.JWT_SECRET)
+        user_id = payload.get("sub")
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+        
+    from server.repositories.user_repository import UserRepository
+    user_repo = UserRepository(db)
+    current_user = await user_repo.get_by_id(user_id)
+    if not current_user:
+        raise HTTPException(status_code=401, detail="User not found")
+
+    repo = AppointmentRepository(db)
+    from sqlalchemy.orm import selectinload
+    
+    # Load appointment with full relationships
+    query = (
+        select(Appointment)
+        .options(
+            selectinload(Appointment.doctor).selectinload(DoctorProfile.user),
+            selectinload(Appointment.patient),
+            selectinload(Appointment.symptom_form),
+            selectinload(Appointment.post_visit_note)
+        )
+        .where(Appointment.id == appointment_id)
+    )
+    res = await db.execute(query)
+    appt = res.scalar_one_or_none()
+    
+    if not appt:
+        raise NotFoundError("Appointment not found")
+        
+    if appt.patient_id != current_user.id and current_user.role != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Unauthorized access to this appointment prescription")
+        
+    if appt.status != AppointmentStatus.COMPLETED:
+        raise HTTPException(status_code=400, detail="Prescription PDF can only be generated for COMPLETED appointments")
+        
+    pdf_content = generate_prescription_pdf(appt)
+    
+    return Response(
+        content=pdf_content,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f"attachment; filename=prescription_{appointment_id}.pdf"
+        }
+    )

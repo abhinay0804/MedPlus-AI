@@ -367,3 +367,52 @@ async def google_callback(
     await db.commit()
     return RedirectResponse(url=f"{settings.FRONTEND_URL}/patient/settings?google_connected=true")
 
+# --- In-App Notifications ---
+
+from typing import List
+from server.schemas.doctor_schemas import InAppNotificationResponse
+
+@router.get("/notifications", response_model=List[InAppNotificationResponse])
+async def get_user_notifications(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Retrieve all in-app notifications for the authenticated user."""
+    from server.database.models import InAppNotification
+    from sqlalchemy import select
+    stmt = select(InAppNotification).where(InAppNotification.user_id == current_user.id).order_by(InAppNotification.created_at.desc())
+    res = await db.execute(stmt)
+    notifications = res.scalars().all()
+    return notifications
+
+@router.put("/notifications/{id}/read")
+async def mark_notification_read(
+    id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Mark a specific in-app notification as read."""
+    from server.database.models import InAppNotification
+    from sqlalchemy import select
+    stmt = select(InAppNotification).where(InAppNotification.id == id, InAppNotification.user_id == current_user.id)
+    res = await db.execute(stmt)
+    notif = res.scalar_one_or_none()
+    if not notif:
+        raise HTTPException(status_code=404, detail="Notification not found")
+    notif.is_read = True
+    await db.commit()
+    return {"success": True}
+
+@router.put("/notifications/read-all")
+async def mark_all_notifications_read(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Mark all in-app notifications as read for the authenticated user."""
+    from server.database.models import InAppNotification
+    from sqlalchemy import update
+    stmt = update(InAppNotification).where(InAppNotification.user_id == current_user.id).values(is_read=True)
+    await db.execute(stmt)
+    await db.commit()
+    return {"success": True}
+

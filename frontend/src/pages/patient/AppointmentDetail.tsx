@@ -174,6 +174,19 @@ export const AppointmentDetail: React.FC = () => {
                   <span>QR Ticket</span>
                 </button>
               )}
+              {appointment.status === 'COMPLETED' && (
+                <button
+                  onClick={() => {
+                    const token = localStorage.getItem('access_token') || ''
+                    const apiBase = import.meta.env.VITE_API_URL || '/api'
+                    window.open(`${apiBase}/patient/appointments/${appointment.id}/pdf?token=${token}`, '_blank')
+                  }}
+                  className="px-3.5 py-1.5 bg-teal-600 hover:bg-teal-700 text-white rounded-full text-xs font-extrabold flex items-center space-x-1.5 transition shadow-sm cursor-pointer"
+                >
+                  <FileText className="w-4 h-4" />
+                  <span>Download Prescription PDF</span>
+                </button>
+              )}
               {(appointment.status === 'CONFIRMED' || appointment.status === 'HELD' || appointment.status === 'PENDING_APPROVAL') && (
                 <button
                   onClick={async () => {

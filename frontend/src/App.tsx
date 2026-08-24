@@ -15,11 +15,14 @@ import { AppointmentDetail } from './pages/patient/AppointmentDetail'
 import { PatientSettings } from './pages/patient/Settings'
 import { DoctorDashboard } from './pages/doctor/DoctorDashboard'
 import { DoctorSettings } from './pages/doctor/Settings'
+import { DoctorAnalytics } from './pages/doctor/Analytics'
 import { AdminDashboard } from './pages/admin/AdminDashboard'
 import { DoctorManagement } from './pages/admin/DoctorManagement'
 import { DoctorDetail } from './pages/admin/DoctorDetail'
 import { LeaveManager } from './pages/admin/LeaveManager'
 import { AuditLogPage } from './pages/admin/AuditLog'
+import { Appointments as AdminAppointments } from './pages/admin/Appointments'
+import { Patients as AdminPatients } from './pages/admin/Patients'
 
 export const App: React.FC = () => {
   return (
@@ -103,6 +106,14 @@ export const App: React.FC = () => {
               }
             />
             <Route
+              path="/doctor/analytics"
+              element={
+                <RequireAuth allowedRoles={['DOCTOR']}>
+                  <DoctorAnalytics />
+                </RequireAuth>
+              }
+            />
+            <Route
               path="/doctor/settings"
               element={
                 <RequireAuth allowedRoles={['DOCTOR']}>
@@ -149,6 +160,22 @@ export const App: React.FC = () => {
               element={
                 <RequireAuth allowedRoles={['ADMIN']}>
                   <AuditLogPage />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/admin/appointments"
+              element={
+                <RequireAuth allowedRoles={['ADMIN']}>
+                  <AdminAppointments />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/admin/patients"
+              element={
+                <RequireAuth allowedRoles={['ADMIN']}>
+                  <AdminPatients />
                 </RequireAuth>
               }
             />

@@ -48,6 +48,8 @@ class DoctorResponse(BaseModel):
     average_rating: Optional[float] = None
     reviews_count: Optional[int] = None
     is_active: bool
+    demerit_points: int
+    is_suspended: bool
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
@@ -79,3 +81,31 @@ class AdminDashboardStats(BaseModel):
     pending_appointments: int
     completed_appointments: int
     cancelled_appointments: int
+
+class AdminNoteCreate(BaseModel):
+    subject: str = Field(..., min_length=1)
+    body: str = Field(..., min_length=1)
+    priority: str = Field("ROUTINE", description="URGENT, IMPORTANT, ROUTINE")
+
+class AdminNoteResponse(BaseModel):
+    id: str
+    doctor_id: str
+    subject: str
+    body: str
+    priority: str
+    is_read: bool
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+class InAppNotificationResponse(BaseModel):
+    id: str
+    user_id: str
+    title: str
+    body: str
+    type: str
+    is_read: bool
+    link: Optional[str] = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)

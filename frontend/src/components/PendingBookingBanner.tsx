@@ -88,12 +88,12 @@ export const PendingBookingBanner: React.FC = () => {
 
   const doctorName = heldAppointment.doctor?.user?.full_name || 'Doctor'
   const doctorSpecialty = heldAppointment.doctor?.specialisation || ''
-  const slotDateStr = new Date(heldAppointment.slot_start).toLocaleDateString([], {
+  const slotDateStr = new Date(parseUtcTime(heldAppointment.slot_start)).toLocaleDateString([], {
     weekday: 'short',
     month: 'short',
     day: 'numeric',
   })
-  const slotTimeStr = new Date(heldAppointment.slot_start).toLocaleTimeString([], {
+  const slotTimeStr = new Date(parseUtcTime(heldAppointment.slot_start)).toLocaleTimeString([], {
     hour: '2-digit',
     minute: '2-digit',
   })

@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useCallback } from 'react'
 import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom'
 import { Layout } from '../../components/Layout'
 import { api } from '../../lib/api'
 import { DoctorProfile, Slot, Appointment } from '../../types'
 import { SlotPicker } from '../../components/SlotPicker'
+import { parseDate } from '../../lib/utils'
 import { HoldCountdown } from '../../components/HoldCountdown'
 import confetti from 'canvas-confetti'
 import {
@@ -77,6 +78,25 @@ export const BookAppointment: React.FC = () => {
   })
   const [manualEdits, setManualEdits] = useState<Record<string, boolean>>({})
   const [isAnalyzingSpecialty, setIsAnalyzingSpecialty] = useState(false)
+
+  const isBookingCompletedRef = React.useRef(false)
+  const heldAppointmentRef = React.useRef<Appointment | null>(null)
+
+  useEffect(() => {
+    heldAppointmentRef.current = heldAppointment
+  }, [heldAppointment])
+
+  // Cleanup hold on unmount / navigate away
+  useEffect(() => {
+    return () => {
+      if (heldAppointmentRef.current && !isBookingCompletedRef.current) {
+        const apptId = heldAppointmentRef.current.id
+        api.delete(`/patient/appointments/${apptId}`).catch((err) => {
+          console.error('Failed to release slot hold on unmount:', err)
+        })
+      }
+    }
+  }, [])
 
   // Auto-save symptom text to sessionStorage
   useEffect(() => {
@@ -208,57 +228,58 @@ export const BookAppointment: React.FC = () => {
     loadRescheduleDetails()
   }, [rescheduleAppointmentId])
 
+  const loadMyAppointments = useCallback(async () => {
+    if (!doctorId) return
+    try {
+      const appts = await api.get<Appointment[]>('/patient/appointments')
+      setMyAppointments(appts)
+
+      const targetApptId = searchParams.get('appointment_id')
+      const initialStepParam = searchParams.get('step')
+
+      let activeHold = targetApptId ? appts.find((a) => a.id === targetApptId) : null
+      if (!activeHold) {
+        activeHold = appts.find(
+          (a) =>
+            (a.status === 'HELD' || a.status === 'CONFIRMED') &&
+            a.doctor_id === doctorId &&
+            a.hold_expires_at &&
+            new Date(a.hold_expires_at).getTime() > Date.now()
+        )
+      }
+
+      if (activeHold) {
+        const fullAppt = await api.get<Appointment>(`/patient/appointments/${activeHold.id}`)
+        setHeldAppointment(fullAppt)
+        if (fullAppt.slot_start) {
+          setSelectedDate(fullAppt.slot_start.split('T')[0])
+        }
+        if (fullAppt.symptom_form?.symptoms_text) {
+          setSymptomsText(fullAppt.symptom_form.symptoms_text)
+          setLastAnalyzedText(fullAppt.symptom_form.symptoms_text)
+        }
+        if (fullAppt.symptom_form?.pre_visit_summary?.intake_answers) {
+          setIntakeAnswers(fullAppt.symptom_form.pre_visit_summary.intake_answers)
+        }
+        setSelectedSlot({
+          slot_start: fullAppt.slot_start,
+          slot_end: fullAppt.slot_end,
+          is_available: true,
+          doctor_id: fullAppt.doctor_id,
+        })
+        if (initialStepParam === '2' || targetApptId || fullAppt.status === 'HELD' || fullAppt.status === 'CONFIRMED') {
+          setStep(2) // Directly land on Step 2 (Symptoms & Confirm)
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load patient appointments:', err)
+    }
+  }, [doctorId, searchParams])
+
   // Load patient's existing active appointments to prevent double-booking visually & auto-resume active holds
   useEffect(() => {
-    async function loadMyAppointments() {
-      if (!doctorId) return
-      try {
-        const appts = await api.get<Appointment[]>('/patient/appointments')
-        setMyAppointments(appts)
-
-        const targetApptId = searchParams.get('appointment_id')
-        const initialStepParam = searchParams.get('step')
-
-        let activeHold = targetApptId ? appts.find((a) => a.id === targetApptId) : null
-        if (!activeHold) {
-          activeHold = appts.find(
-            (a) =>
-              (a.status === 'HELD' || a.status === 'CONFIRMED') &&
-              a.doctor_id === doctorId &&
-              a.hold_expires_at &&
-              new Date(a.hold_expires_at).getTime() > Date.now()
-          )
-        }
-
-        if (activeHold) {
-          const fullAppt = await api.get<Appointment>(`/patient/appointments/${activeHold.id}`)
-          setHeldAppointment(fullAppt)
-          if (fullAppt.slot_start) {
-            setSelectedDate(fullAppt.slot_start.split('T')[0])
-          }
-          if (fullAppt.symptom_form?.symptoms_text) {
-            setSymptomsText(fullAppt.symptom_form.symptoms_text)
-            setLastAnalyzedText(fullAppt.symptom_form.symptoms_text)
-          }
-          if (fullAppt.symptom_form?.pre_visit_summary?.intake_answers) {
-            setIntakeAnswers(fullAppt.symptom_form.pre_visit_summary.intake_answers)
-          }
-          setSelectedSlot({
-            slot_start: fullAppt.slot_start,
-            slot_end: fullAppt.slot_end,
-            is_available: true,
-            doctor_id: fullAppt.doctor_id,
-          })
-          if (initialStepParam === '2' || targetApptId || fullAppt.status === 'HELD' || fullAppt.status === 'CONFIRMED') {
-            setStep(2) // Directly land on Step 2 (Symptoms & Confirm)
-          }
-        }
-      } catch (err) {
-        console.error('Failed to load patient appointments:', err)
-      }
-    }
     loadMyAppointments()
-  }, [doctorId, searchParams])
+  }, [loadMyAppointments])
 
   useEffect(() => {
     async function loadSlots() {
@@ -273,18 +294,18 @@ export const BookAppointment: React.FC = () => {
         
         // Cross-reference slots with patient's existing active appointments to block overlapping slots
         const processed = slotsData.map((s) => {
-          const sStart = new Date(s.slot_start).getTime()
-          const sEnd = new Date(s.slot_end).getTime()
+          const sStart = parseDate(s.slot_start).getTime()
+          const sEnd = parseDate(s.slot_end).getTime()
           const conflicting = myAppointments.find((a) => {
-            const isHoldActive = a.status === 'HELD' && a.hold_expires_at && new Date(a.hold_expires_at).getTime() > Date.now()
+            const isHoldActive = a.status === 'HELD' && a.hold_expires_at && parseDate(a.hold_expires_at).getTime() > Date.now()
             const isApptActive = a.status === 'CONFIRMED' || isHoldActive
             if (!isApptActive) return false
 
             // Do not conflict with the currently held/edited appointment itself
             if (heldAppointment && a.id === heldAppointment.id) return false
 
-            const aStart = new Date(a.slot_start).getTime()
-            const aEnd = new Date(a.slot_end).getTime()
+            const aStart = parseDate(a.slot_start).getTime()
+            const aEnd = parseDate(a.slot_end).getTime()
             return aStart < sEnd && aEnd > sStart
           })
 
@@ -310,12 +331,40 @@ export const BookAppointment: React.FC = () => {
   }, [doctorId, selectedDate, myAppointments])
 
   const handleSelectConflictSlot = (slot: Slot) => {
-    const sStart = new Date(slot.slot_start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    const sEnd = new Date(slot.slot_end).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    const sStart = parseDate(slot.slot_start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    const sEnd = parseDate(slot.slot_end).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     setError(`You already have an appointment scheduled (${sStart} - ${sEnd}) that overlaps with this slot.`)
     if (slot.conflicting_appointment_id) {
       setConflictAppointmentId(slot.conflicting_appointment_id)
     }
+  }
+
+  const handleCancelHold = async () => {
+    if (heldAppointment) {
+      try {
+        setIsSubmitting(true)
+        await api.delete(`/patient/appointments/${heldAppointment.id}`)
+      } catch (err) {
+        console.error('Failed to cancel held appointment:', err)
+      } finally {
+        setIsSubmitting(false)
+      }
+    }
+    setHeldAppointment(null)
+    setSelectedSlot(null)
+    setStep(1)
+    loadMyAppointments()
+  }
+
+  const handleBackNavigation = async () => {
+    if (heldAppointment) {
+      try {
+        await api.delete(`/patient/appointments/${heldAppointment.id}`)
+      } catch (err) {
+        console.error('Failed to release hold on back click:', err)
+      }
+    }
+    navigate('/patient/doctors')
   }
 
   const handleHoldSlot = async (slot: Slot) => {
@@ -350,11 +399,11 @@ export const BookAppointment: React.FC = () => {
       setError(errMsg)
 
       // Find matching conflicting appointment for "View Details" button
-      const sStart = new Date(slot.slot_start).getTime()
-      const sEnd = new Date(slot.slot_end).getTime()
+      const sStart = parseDate(slot.slot_start).getTime()
+      const sEnd = parseDate(slot.slot_end).getTime()
       const matching = myAppointments.find((a) => {
-        const aStart = new Date(a.slot_start).getTime()
-        const aEnd = new Date(a.slot_end).getTime()
+        const aStart = parseDate(a.slot_start).getTime()
+        const aEnd = parseDate(a.slot_end).getTime()
         return aStart < sEnd && aEnd > sStart
       })
       if (matching) {
@@ -367,14 +416,14 @@ export const BookAppointment: React.FC = () => {
 
   const overlappingAppointment = myAppointments.find((a) => {
     if (!heldAppointment || a.id === heldAppointment.id) return false
-    const isHoldActive = a.status === 'HELD' && a.hold_expires_at && new Date(a.hold_expires_at).getTime() > Date.now()
+    const isHoldActive = a.status === 'HELD' && a.hold_expires_at && parseDate(a.hold_expires_at).getTime() > Date.now()
     const isApptActive = a.status === 'CONFIRMED' || isHoldActive
     if (!isApptActive) return false
 
-    const aStart = new Date(a.slot_start).getTime()
-    const aEnd = new Date(a.slot_end).getTime()
-    const hStart = new Date(heldAppointment.slot_start).getTime()
-    const hEnd = new Date(heldAppointment.slot_end).getTime()
+    const aStart = parseDate(a.slot_start).getTime()
+    const aEnd = parseDate(a.slot_end).getTime()
+    const hStart = parseDate(heldAppointment.slot_start).getTime()
+    const hEnd = parseDate(heldAppointment.slot_end).getTime()
     return aStart < hEnd && aEnd > hStart
   })
 
@@ -426,6 +475,7 @@ export const BookAppointment: React.FC = () => {
         {}
       )
 
+      isBookingCompletedRef.current = true
       sessionStorage.removeItem('medplus_temp_symptoms')
       sessionStorage.removeItem('medplus_temp_intake')
       window.dispatchEvent(new CustomEvent('medplus_hold_released'))
@@ -448,7 +498,7 @@ export const BookAppointment: React.FC = () => {
         {/* Header with Back Arrow Button */}
         <div className="flex items-center space-x-4">
           <button
-            onClick={() => navigate('/patient/doctors')}
+            onClick={handleBackNavigation}
             className="p-3 rounded-2xl bg-white dark:bg-slate-800/80 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white border border-slate-200 dark:border-slate-700 transition flex items-center justify-center shrink-0 shadow-sm"
             title="Back to Doctors List"
           >
@@ -678,7 +728,7 @@ export const BookAppointment: React.FC = () => {
                       <div>
                         <p className="font-extrabold text-sm text-rose-900 dark:text-rose-300">Schedule Conflict Mismatch</p>
                         <p className="mt-0.5 opacity-90 leading-relaxed text-rose-800 dark:text-rose-450">
-                          You already have an appointment scheduled with <strong>Dr. {overlappingAppointment.doctor?.user?.full_name || 'Specialist'}</strong> ({overlappingAppointment.doctor?.specialisation}) that overlaps with this slot (<strong>{new Date(overlappingAppointment.slot_start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</strong>).
+                          You already have an appointment scheduled with <strong>Dr. {overlappingAppointment.doctor?.user?.full_name || 'Specialist'}</strong> ({overlappingAppointment.doctor?.specialisation}) that overlaps with this slot (<strong>{parseDate(overlappingAppointment.slot_start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</strong>).
                         </p>
                         <p className="text-[11px] opacity-80 mt-1">Please reschedule or cancel that appointment before you can confirm this booking.</p>
                       </div>
@@ -700,7 +750,7 @@ export const BookAppointment: React.FC = () => {
                 <div className="flex items-center justify-between w-full">
                   <button
                     type="button"
-                    onClick={() => setStep(1)}
+                    onClick={handleCancelHold}
                     className="px-4 py-2.5 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:white text-xs font-bold cursor-pointer"
                   >
                     ← Select Different Slot

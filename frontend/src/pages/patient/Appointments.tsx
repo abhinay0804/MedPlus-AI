@@ -81,7 +81,7 @@ export const Appointments: React.FC = () => {
   }, [])
 
   const categories = ['ALL', 'Cardiology', 'Dermatology', 'Neurology', 'Orthopedics', 'Pediatrics', 'General Medicine']
-  const years = ['ALL', ...Array.from(new Set(appointments.map(a => new Date(a.slot_start).getFullYear().toString()))).sort((a, b) => b.localeCompare(a))]
+  const years = ['ALL', ...Array.from(new Set(appointments.map(a => new Date(parseUtcTime(a.slot_start)).getFullYear().toString()))).sort((a, b) => b.localeCompare(a))]
 
   const months = [
     { value: 'ALL', label: 'All Months' },
@@ -123,7 +123,7 @@ export const Appointments: React.FC = () => {
     }
 
     // 4. Date Year Filter
-    const dateObj = new Date(a.slot_start)
+    const dateObj = new Date(parseUtcTime(a.slot_start))
     if (selectedYear !== 'ALL' && dateObj.getFullYear().toString() !== selectedYear) {
       return false
     }
@@ -151,15 +151,15 @@ export const Appointments: React.FC = () => {
 
   const sorted = [...filtered].sort((a, b) => {
     if (isNoFilterSelected && sortBy === 'latest') {
-      const timeA = new Date(a.created_at || a.slot_start).getTime()
-      const timeB = new Date(b.created_at || b.slot_start).getTime()
+      const timeA = new Date(parseUtcTime(a.created_at || a.slot_start)).getTime()
+      const timeB = new Date(parseUtcTime(b.created_at || b.slot_start)).getTime()
       return timeB - timeA
     }
     if (sortBy === 'latest') {
-      return new Date(b.slot_start).getTime() - new Date(a.slot_start).getTime()
+      return new Date(parseUtcTime(b.slot_start)).getTime() - new Date(parseUtcTime(a.slot_start)).getTime()
     }
     if (sortBy === 'oldest') {
-      return new Date(a.slot_start).getTime() - new Date(b.slot_start).getTime()
+      return new Date(parseUtcTime(a.slot_start)).getTime() - new Date(parseUtcTime(b.slot_start)).getTime()
     }
     if (sortBy === 'doctor') {
       const nameA = a.doctor?.user?.full_name || ''

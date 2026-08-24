@@ -57,6 +57,8 @@ def is_smtp_configured() -> bool:
     )
 
 
+EMAIL_LOGS = []
+
 async def send_email(
     to_email: str,
     subject: str,
@@ -67,6 +69,7 @@ async def send_email(
     Render HTML template and send email via SMTP or simulate send if unconfigured / dev environment.
     Returns True on success or simulation fallback.
     """
+    from datetime import datetime
     try:
         html_content = _render_template(template_name, context)
     except Exception as e:
@@ -74,6 +77,19 @@ async def send_email(
         return False
 
     is_dummy = not is_smtp_configured()
+    
+    # Track email log in global memory for admin console
+    email_log = {
+        "to": to_email,
+        "subject": subject,
+        "template": template_name,
+        "status": "SIMULATED" if is_dummy else "SENT",
+        "timestamp": datetime.utcnow().isoformat(),
+        "preview": html_content[:200] + "..." if len(html_content) > 200 else html_content
+    }
+    EMAIL_LOGS.append(email_log)
+    if len(EMAIL_LOGS) > 100:
+        EMAIL_LOGS.pop(0)
 
     if is_dummy:
         logger.info(

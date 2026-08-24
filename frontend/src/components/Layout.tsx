@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { ThemeToggle } from './ThemeProvider'
+import { NotificationBell } from './NotificationBell'
 import {
   Activity,
   Calendar,
@@ -13,6 +14,7 @@ import {
   Settings as SettingsIcon,
   ShieldCheck,
   CalendarDays,
+  ClipboardList,
 } from 'lucide-react'
 
 export const Layout: React.FC<{ children: React.ReactNode; activeTab?: string }> = ({ children, activeTab }) => {
@@ -35,13 +37,16 @@ export const Layout: React.FC<{ children: React.ReactNode; activeTab?: string }>
 
   const doctorLinks = [
     { to: '/doctor/dashboard', label: 'Consultation Schedule', icon: Calendar },
+    { to: '/doctor/analytics', label: 'Practice Analytics', icon: Activity },
     { to: '/doctor/settings', label: 'Profile & Hours', icon: SettingsIcon },
   ]
 
   const adminLinks = [
     { to: '/admin/dashboard', label: 'Overview', icon: Activity },
     { to: '/admin/doctors', label: 'Doctor Management', icon: Users },
+    { to: '/admin/appointments', label: 'Appointments Center', icon: ClipboardList },
     { to: '/admin/leave', label: 'Leave Manager', icon: CalendarDays },
+    { to: '/admin/patients', label: 'Patient Registry', icon: Users },
     { to: '/admin/audit', label: 'Audit Trail', icon: ShieldCheck },
   ]
 
@@ -60,6 +65,7 @@ export const Layout: React.FC<{ children: React.ReactNode; activeTab?: string }>
           <span className="font-bold text-lg text-teal-600 dark:text-teal-400">MedPulse AI</span>
         </div>
         <div className="flex items-center space-x-2">
+          <NotificationBell />
           <ThemeToggle />
           <button onClick={() => setMobileOpen(!mobileOpen)} className="p-2 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white">
             {mobileOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
@@ -83,7 +89,10 @@ export const Layout: React.FC<{ children: React.ReactNode; activeTab?: string }>
               <p className="text-[11px] text-teal-600 dark:text-teal-400 font-semibold">Smart Triage & Bookings</p>
             </div>
           </div>
-          <ThemeToggle />
+          <div className="flex items-center space-x-2">
+            <NotificationBell />
+            <ThemeToggle />
+          </div>
         </div>
 
         {/* User Info Card */}

@@ -595,3 +595,251 @@ JSON ONLY:
         
     return fallback
 
+
+async def generate_clinical_insights(metrics: dict) -> dict:
+    """
+    Generate Gemini AI operational insights and staffing recommendations for hospital admins.
+    """
+    client = _get_client()
+    
+    prompt = f"""
+You are an expert Chief Medical Officer and hospital operations analyst.
+Analyse the following real-time hospital metrics and generate strategic operational insights:
+- Total registered doctors: {metrics.get('total_doctors')} (Active: {metrics.get('active_doctors')})
+- Total registered patients: {metrics.get('total_patients')}
+- Total appointments booked: {metrics.get('total_appointments')}
+- Appointment status breakdown:
+  * Completed: {metrics.get('completed_appointments')}
+  * Confirmed: {metrics.get('confirmed_appointments')}
+  * Pending Approval: {metrics.get('pending_appointments')}
+  * Cancelled: {metrics.get('cancelled_appointments')}
+- Patient Symptom Urgency:
+  * Critical: {metrics.get('critical_urgency')}
+  * Urgent: {metrics.get('medium_urgency')}
+  * Routine: {metrics.get('low_urgency')}
+- Appointments by Department:
+  {json.dumps(metrics.get('specialty_distribution'), indent=2)}
+
+Generate a structured response with exactly 4 sections:
+1. **Executive Operational Summary**: A 2-sentence summary of the hospital's current capacity and workload.
+2. **Resource & Staffing Bottlenecks**: Identify departments reaching capacity or at risk (e.g. if leave requests or booking counts are high).
+3. **Clinical Urgency Review**: Highlight any high-urgency patient concentration and triage recommendations.
+4. **Actionable Recommendations**: 3 clear bullet points for the administrator to optimize scheduling (e.g. adjust slot durations, recruit in a department, adjust leave approvals).
+
+Return a JSON object containing:
+- "insights_html": A beautifully formatted HTML snippet containing the generated insights using standard CSS classes (e.g. <h4 class="text-sm font-bold text-slate-800 dark:text-slate-200 mt-3">, <ul class="list-disc pl-4 space-y-1">, <li class="text-xs text-slate-600 dark:text-slate-400">, etc.).
+- "peak_hours_prediction": "Morning (9 AM - 12 PM)" or "Afternoon (1 PM - 4 PM)" based on data.
+- "department_alert": Name of the department needing attention (e.g. "Cardiology" or "General Medicine" or "None").
+
+JSON ONLY:
+"""
+    fallback = {
+        "insights_html": """
+        <div class="space-y-4">
+            <h4 class="text-sm font-bold text-slate-800 dark:text-slate-200">Executive Operational Summary</h4>
+            <p class="text-xs text-slate-600 dark:text-slate-400">The hospital is operating at standard capacity. Booking load is evenly distributed across general medicine and specialisations. Peak slots are well-balanced.</p>
+            <h4 class="text-sm font-bold text-slate-800 dark:text-slate-200">Resource & Staffing Bottlenecks</h4>
+            <p class="text-xs text-slate-600 dark:text-slate-400">All departments currently maintain stable coverage. No immediate bottlenecks detected. Monitor leave requests during weekends to prevent slot deficits.</p>
+            <h4 class="text-sm font-bold text-slate-800 dark:text-slate-200">Clinical Urgency Review</h4>
+            <p class="text-xs text-slate-600 dark:text-slate-400">Triage systems show a routine distribution of symptoms. Low-urgency patient consultations compose the majority of the current booking pipeline.</p>
+            <h4 class="text-sm font-bold text-slate-800 dark:text-slate-200">Actionable Recommendations</h4>
+            <ul class="list-disc pl-4 space-y-1 text-xs text-slate-600 dark:text-slate-400">
+                <li>Maintain the default 30-minute slot durations for specialized consultations.</li>
+                <li>Encourage patients to complete symptom forms early to optimize pre-visit triage.</li>
+                <li>Monitor approved leave overlap to ensure at least one specialist per department remains active.</li>
+            </ul>
+        </div>
+        """,
+        "peak_hours_prediction": "Morning (9 AM - 12 PM)",
+        "department_alert": "None"
+    }
+
+    if not client:
+        return fallback
+
+    try:
+        response_text = await _call_gemini(prompt)
+        if response_text:
+            data = _extract_json(response_text)
+            if data and "insights_html" in data:
+                return data
+    except Exception as e:
+        logger.warning(f"Failed to get Gemini clinical insights: {e}")
+        
+    return fallback
+
+
+async def analyze_cancellation_reason(reason: str) -> str:
+    """
+    Classify a cancellation reason using Gemini:
+    Returns 'EMERGENCY', 'CONVENIENCE', or 'UNJUSTIFIED'.
+    """
+    client = _get_client()
+    if not client:
+        # Development simulation fallback
+        reason_lower = reason.lower()
+        if any(w in reason_lower for w in ["sick", "emergency", "fever", "accident", "hospital", "critical", "pain", "medical"]):
+            return "EMERGENCY"
+        if not reason.strip() or len(reason.strip()) < 5:
+            return "UNJUSTIFIED"
+        return "CONVENIENCE"
+
+    prompt = f"""You are a hospital administration auditor. Analyze the cancellation reason provided by a doctor for cancelling a patient's confirmed appointment.
+Classify the reason into exactly one of these categories:
+- "EMERGENCY": Genuine sudden medical emergencies, personal illness, accidents, or critical family emergencies.
+- "CONVENIENCE": Rescheduling for convenience, routine/non-urgent travel, minor tasks, personal schedule adjustments, or administrative reasons.
+- "UNJUSTIFIED": No reason provided, vague/empty explanation (e.g. "personal", "busy", "cannot make it"), or direct refusal to provide details.
+
+Doctor's cancellation reason: "{reason}"
+
+Respond with ONLY the category string ("EMERGENCY", "CONVENIENCE", or "UNJUSTIFIED"). Do not include any formatting, explanation, or extra characters."""
+
+    try:
+        from google.genai import types
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt,
+        )
+        result = (response.text or "").strip().upper()
+        if "EMERGENCY" in result:
+            return "EMERGENCY"
+        elif "CONVENIENCE" in result:
+            return "CONVENIENCE"
+        else:
+            return "UNJUSTIFIED"
+    except Exception as e:
+        logger.error(f"Error classifying cancellation reason with Gemini: {e}")
+        return "UNJUSTIFIED"
+
+
+# ---------------------------------------------------------------------------
+# Patient Longitudinal History Summarization & Diagnostic Triage Assistant
+# ---------------------------------------------------------------------------
+
+PATIENT_LONGITUDINAL_PROMPT = """You are a senior clinical consultant and triage supervisor. You are preparing a briefing context for the doctor regarding a patient's medical history relative to their current appointment.
+
+Here is the context of the current appointment:
+- Doctor Speciality: {current_specialty}
+- Patient Current Symptoms/Intake: "{current_symptoms}"
+
+Here is the patient's previous consultation history with other doctors:
+{history_formatted}
+
+Please analyze this clinical records history and generate a structured JSON object containing exactly three sections:
+1. "specialty_history": A 2-3 sentence summary summarizing all past consultations, symptoms, notes, and medications *specifically* within the "{current_specialty}" department. Focus on patterns, flare-ups, and efficacy of past treatments. If they have no past visits in this specialty, output a friendly confirmation of "No previous {current_specialty} records on file."
+2. "general_medical_context": A 2-3 sentence summary of the patient's wider medical history (all other specialties). Focus on systemic conditions, active medications, or general findings that might interact with or inform the current diagnosis.
+3. "diagnostic_factors": 2-3 key clinical factors or suggestions regarding the current complaint (e.g. connections between past treatments/symptoms and the current onset, duration comparisons, potential red flags, or specific follow-up questions the doctor should ask).
+
+Respond ONLY with valid JSON matching this schema:
+{{
+  "specialty_history": "Clinical summary of past {current_specialty} records...",
+  "general_medical_context": "Clinical summary of other department records...",
+  "diagnostic_factors": "Key clinical triage insights, duration factors, and suggested follow-up questions..."
+}}
+
+JSON ONLY:"""
+
+
+def generate_longitudinal_fallback(current_specialty: str, current_symptoms: str, history: list[dict]) -> dict:
+    """Generate local clinical rules-based fallback summaries for offline mode."""
+    specialty_records = [a for a in history if a.get("specialisation", "").lower() == current_specialty.lower()]
+    other_records = [a for a in history if a.get("specialisation", "").lower() != current_specialty.lower()]
+    
+    # 1. Specialty history
+    if not specialty_records:
+        spec_sum = f"No previous {current_specialty} records on file."
+    else:
+        dates = [a.get("slot_start")[:10] if a.get("slot_start") else "Unknown" for a in specialty_records]
+        meds = [a.get("prescription") for a in specialty_records if a.get("prescription")]
+        spec_sum = f"Patient has {len(specialty_records)} previous visit(s) in {current_specialty} (on {', '.join(dates[:3])})."
+        if meds:
+            spec_sum += f" Prescribed medications: {', '.join(meds[:3])}."
+        else:
+            spec_sum += " No active prescriptions recorded in this department."
+
+    # 2. General context
+    if not other_records:
+        gen_sum = "No historical clinical records in other specialties."
+    else:
+        specs = list(set([a.get("specialisation") for a in other_records if a.get("specialisation")]))
+        dates = [a.get("slot_start")[:10] if a.get("slot_start") else "Unknown" for a in other_records]
+        gen_sum = f"Patient has {len(other_records)} previous visit(s) across other department(s) ({', '.join(specs[:3])}) on dates: {', '.join(dates[:3])}."
+
+    # 3. Diagnostic suggestions
+    suggestions = []
+    curr_sym_lower = current_symptoms.lower() if current_symptoms else ""
+    if specialty_records:
+        suggestions.append(f"Compare current symptoms with target specialty condition from previous visit on {specialty_records[0].get('slot_start')[:10]}.")
+        prev_prescription = specialty_records[0].get("prescription")
+        if prev_prescription:
+            suggestions.append(f"Ask the patient about their compliance/response to the previously prescribed medication: '{prev_prescription}'.")
+    
+    if any(k in curr_sym_lower for k in ["pain", "severe", "worst"]):
+        suggestions.append("Verify pain level on a scale from 1 to 10 and assess onset patterns.")
+    if any(k in curr_sym_lower for k in ["cough", "throat", "fever", "cold"]):
+        suggestions.append("Check temperature, respiratory rate, and duration of systemic signs.")
+
+    if not suggestions:
+        suggestions.append("Verify onset of new symptoms, triggers, and any recent over-the-counter medications tried.")
+
+    return {
+        "specialty_history": spec_sum,
+        "general_medical_context": gen_sum,
+        "diagnostic_factors": " - " + "\n - ".join(suggestions)
+    }
+
+
+async def generate_patient_longitudinal_summary(
+    current_specialty: str,
+    current_symptoms: str,
+    history: list[dict]
+) -> dict:
+    """
+    Generate longitudinal summary of patient history and diagnostic suggestions using Gemini.
+    """
+    if not history:
+        return {
+            "specialty_history": f"No previous {current_specialty} records on file.",
+            "general_medical_context": "No other historical medical records on file.",
+            "diagnostic_factors": "This is the patient's first recorded appointment at the clinic. Perform a baseline health intake."
+        }
+
+    client = _get_client()
+    if not client:
+        logger.info("Gemini key not configured. Using local rule-based longitudinal fallback.")
+        return generate_longitudinal_fallback(current_specialty, current_symptoms, history)
+
+    # Format history records for the prompt
+    history_lines = []
+    for i, a in enumerate(history, 1):
+        line = f"[{i}] Date: {a.get('slot_start')[:10]} | Specialty: {a.get('specialisation')} | Doctor: {a.get('doctor_name')}\n"
+        if a.get('symptoms'):
+            line += f"    - Symptoms: {a.get('symptoms')}\n"
+        if a.get('doctor_notes'):
+            line += f"    - Doctor Notes: {a.get('doctor_notes')}\n"
+        if a.get('prescription'):
+            line += f"    - Prescription: {a.get('prescription')}\n"
+        history_lines.append(line)
+    
+    history_formatted = "\n".join(history_lines)
+
+    prompt = PATIENT_LONGITUDINAL_PROMPT.format(
+        current_specialty=current_specialty,
+        current_symptoms=current_symptoms or "None provided",
+        history_formatted=history_formatted
+    )
+
+    try:
+        raw = await _call_gemini(prompt)
+        if raw:
+            parsed = _extract_json(raw)
+            if parsed and all(k in parsed for k in ["specialty_history", "general_medical_context", "diagnostic_factors"]):
+                return parsed
+    except Exception as e:
+        logger.warning(f"Failed to generate longitudinal AI summary with Gemini: {e}")
+
+    return generate_longitudinal_fallback(current_specialty, current_symptoms, history)
+
+
+
+

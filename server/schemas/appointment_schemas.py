@@ -63,6 +63,9 @@ class AppointmentResponse(BaseModel):
     hold_expires_at: Optional[datetime] = None
     rescheduled_to_id: Optional[str] = None
     start_otp: Optional[str] = None
+    is_started: bool
+    start_reminder_sent: bool
+    reassigned_by_admin: bool
     created_at: datetime
     updated_at: datetime
 

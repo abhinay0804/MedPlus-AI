@@ -49,10 +49,10 @@ celery_app.conf.update(
             "task": "microservices.tasks.send_appointment_reminders_task",
             "schedule": 900.0,  # every 15 minutes
         },
-        # Medication reminder emails every 30 minutes
+        # Medication reminder emails every 60 seconds
         "medication-reminders": {
             "task": "microservices.tasks.send_medication_reminders_task",
-            "schedule": 1800.0,  # every 30 minutes
+            "schedule": 60.0,  # every 60 seconds
         },
         # Retry failed LLM summaries every 15 minutes
         "retry-failed-llm": {
@@ -67,6 +67,16 @@ celery_app.conf.update(
         # Auto-approve stale pending requests every 5 minutes
         "auto-approve-stale-requests": {
             "task": "microservices.tasks.auto_approve_stale_requests_task",
+            "schedule": 300.0,
+        },
+        # Start appointment reminders every minute
+        "start-appointment-reminders": {
+            "task": "microservices.tasks.start_appointment_reminder_task",
+            "schedule": 60.0,
+        },
+        # Missed appointment check every 5 minutes
+        "missed-appointment-check": {
+            "task": "microservices.tasks.missed_appointment_check_task",
             "schedule": 300.0,
         },
     },

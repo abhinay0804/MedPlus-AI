@@ -443,28 +443,59 @@ def send_medication_reminders_task():
                 )
             )
             due = result.scalars().all()
-            sent = 0
+            
+            # Group reminders by patient email
+            from collections import defaultdict
+            patient_groups = defaultdict(list)
+            
             for reminder in due:
                 reminder_hhmm = reminder.reminder_time.strftime("%H:%M")
-                if reminder_hhmm != current_time_str:
-                    continue
-                send_email_task.delay(
-                    to_email=reminder.patient.email,
-                    subject=f"Medication Reminder: {reminder.medication_name}",
-                    template_name="medication_reminder.html",
-                    context={
-                        "patient_name": reminder.patient.full_name,
-                        "medication_name": reminder.medication_name,
-                        "dosage": reminder.dosage or "As directed",
-                        "frequency": reminder.frequency,
-                    }
-                )
-                reminder.last_sent_at = datetime.utcnow()
-                sent += 1
+                if reminder_hhmm == current_time_str:
+                    patient_groups[reminder.patient.email].append(reminder)
+            
+            sent = 0
+            for email, reminders_list in patient_groups.items():
+                patient = reminders_list[0].patient
+                
+                if len(reminders_list) > 1:
+                    # Smartly combine multiple medicines into a single email alert!
+                    meds_str = ", ".join([r.medication_name for r in reminders_list])
+                    dosage_str = " | ".join([r.dosage or "As directed" for r in reminders_list])
+                    freq_str = " | ".join([r.frequency or "As directed" for r in reminders_list])
+                    
+                    send_email_task.delay(
+                        to_email=email,
+                        subject=f"Medication Reminder: {meds_str}",
+                        template_name="medication_reminder.html",
+                        context={
+                            "patient_name": patient.full_name,
+                            "medication_name": meds_str,
+                            "dosage": dosage_str,
+                            "frequency": freq_str,
+                        }
+                    )
+                else:
+                    reminder = reminders_list[0]
+                    send_email_task.delay(
+                        to_email=email,
+                        subject=f"Medication Reminder: {reminder.medication_name}",
+                        template_name="medication_reminder.html",
+                        context={
+                            "patient_name": patient.full_name,
+                            "medication_name": reminder.medication_name,
+                            "dosage": reminder.dosage or "As directed",
+                            "frequency": reminder.frequency or "As directed",
+                        }
+                    )
+                
+                # Mark as sent
+                for reminder in reminders_list:
+                    reminder.last_sent_at = datetime.utcnow()
+                sent += len(reminders_list)
 
             if sent:
                 await db.commit()
-                logger.info(f"[MedReminders] Queued {sent} medication reminder emails")
+                logger.info(f"[MedReminders] Queued {sent} medication reminders into grouped email alerts")
 
     run_async(_run())
 
@@ -781,3 +812,212 @@ async def _publish_ws_update(channel: str, payload: dict):
         await r.aclose()
     except Exception as e:
         logger.warning(f"[WebSocket] Redis publish failed (non-fatal): {e}")
+
+
+@celery_app.task(name="microservices.tasks.start_appointment_reminder_task")
+def start_appointment_reminder_task():
+    """Celery Beat task: send reminder to doctor if confirmed slot is not started after 5 minutes."""
+    async def _run():
+        from sqlalchemy import select, and_
+        from sqlalchemy.orm import selectinload
+        from datetime import datetime, timedelta
+        from server.database.models import Appointment, AppointmentStatus, InAppNotification, DoctorProfile
+        from server.routes.patient_routes import safe_dispatch
+        from microservices.tasks import send_email_task
+
+        now = datetime.utcnow()
+        five_min_ago = now - timedelta(minutes=5)
+        one_hour_ago = now - timedelta(hours=1)
+
+        async with AsyncSessionLocal() as db:
+            stmt = (
+                select(Appointment)
+                .options(
+                    selectinload(Appointment.doctor).selectinload(DoctorProfile.user),
+                    selectinload(Appointment.patient)
+                )
+                .where(
+                    Appointment.status == AppointmentStatus.CONFIRMED,
+                    Appointment.is_started == False,
+                    Appointment.start_reminder_sent == False,
+                    Appointment.slot_start <= five_min_ago,
+                    Appointment.slot_start >= one_hour_ago
+                )
+            )
+            result = await db.execute(stmt)
+            appts = result.scalars().all()
+
+            for appt in appts:
+                appt.start_reminder_sent = True
+                db.add(appt)
+                
+                # Send email to doctor
+                if appt.doctor and appt.doctor.user:
+                    doc_email = appt.doctor.user.email
+                    doc_name = appt.doctor.user.full_name
+                    pat_name = appt.patient.full_name
+                    slot_time = appt.slot_start.strftime("%I:%M %p")
+                    
+                    safe_dispatch(
+                        send_email_task,
+                        doc_email,
+                        "URGENT: Appointment Reminder - MedPulse AI",
+                        "generic_notification",
+                        {
+                            "title": "Start Consultation Reminder",
+                            "message": f"Hello Dr. {doc_name},\n\nThis is an urgent reminder to start your scheduled medical consultation with patient {pat_name}.\n\nThe consultation was scheduled to start at {slot_time}.\n\nPlease log in to your dashboard and enter the patient's 4-digit verification OTP to start the session.\n\nBest regards,\nMedPulse AI Administration"
+                        }
+                    )
+                    
+                    # Create in-app notification
+                    notif = InAppNotification(
+                        user_id=appt.doctor.user_id,
+                        title="Urgent: Start Appointment",
+                        body=f"Your appointment with {pat_name} scheduled for {slot_time} is overdue. Please enter the OTP to start.",
+                        type="admin_note",
+                        link="/doctor/dashboard"
+                    )
+                    db.add(notif)
+                    
+                    # Realtime WebSocket trigger
+                    await _publish_ws_update(
+                        f"user_{appt.doctor.user_id}",
+                        {
+                            "type": "OVERDUE_APPOINTMENT_REMINDER",
+                            "appointment_id": appt.id,
+                            "title": "Start Overdue Consultation",
+                            "body": f"Your consultation with {pat_name} is overdue. Please verify the OTP to start."
+                        }
+                    )
+            await db.commit()
+    run_async(_run())
+
+
+@celery_app.task(name="microservices.tasks.missed_appointment_check_task")
+def missed_appointment_check_task():
+    """Celery Beat task: mark appointments missed after 2 hours from slot end if never started. Penalizes doctor."""
+    async def _run():
+        from sqlalchemy import select, and_
+        from sqlalchemy.orm import selectinload
+        from datetime import datetime, timedelta
+        from server.database.models import Appointment, AppointmentStatus, InAppNotification, AuditLog, DoctorProfile, User
+        from server.routes.patient_routes import safe_dispatch
+        from microservices.tasks import send_email_task, sync_calendar_event_task
+
+        now = datetime.utcnow()
+        two_hours_ago = now - timedelta(hours=2)
+
+        async with AsyncSessionLocal() as db:
+            stmt = (
+                select(Appointment)
+                .options(
+                    selectinload(Appointment.doctor).selectinload(DoctorProfile.user),
+                    selectinload(Appointment.patient)
+                )
+                .where(
+                    Appointment.status == AppointmentStatus.CONFIRMED,
+                    Appointment.is_started == False,
+                    Appointment.slot_end <= two_hours_ago
+                )
+            )
+            result = await db.execute(stmt)
+            appts = result.scalars().all()
+
+            for appt in appts:
+                # Cancel the appointment
+                appt.status = AppointmentStatus.CANCELLED
+                appt.hold_expires_at = None
+                db.add(appt)
+                
+                # Penalize doctor with 5 demerit points
+                doc = appt.doctor
+                doc.demerit_points += 5
+                
+                suspension_msg = ""
+                if doc.demerit_points >= 10:
+                    doc.is_suspended = True
+                    suspension_msg = " Your account is now suspended due to excessive demerit points."
+                    
+                    # In-app notification for suspension
+                    suspension_notif = InAppNotification(
+                        user_id=doc.user_id,
+                        title="Profile Suspended due to Demerits",
+                        body=f"Your profile has been suspended after earning 5 demerit points for a missed consultation (total: {doc.demerit_points}). Access locked.",
+                        type="admin_note",
+                        link="/doctor/dashboard"
+                    )
+                    db.add(suspension_notif)
+                    
+                    # Send suspension email
+                    safe_dispatch(
+                        send_email_task,
+                        doc.user.email,
+                        "Account Suspended — MedPulse AI",
+                        "generic_notification",
+                        {
+                            "title": "Account Suspended",
+                            "message": f"Hello Dr. {doc.user.full_name},\n\nYour clinic access has been suspended because you have reached {doc.demerit_points} demerit points.\n\nLatest violation: Missed appointment without cancellation (5 demerits).\n\nPlease contact the clinic administrator to review your profile and reactivate your account.\n\nBest regards,\nMedPulse AI Administration"
+                        }
+                    )
+                db.add(doc)
+
+                # Log audit trail
+                audit = AuditLog(
+                    action="APPOINTMENT_MISSED_BY_DOCTOR",
+                    target_type="Appointment",
+                    target_id=appt.id,
+                    user_id=doc.user_id,
+                    details=f"Doctor missed appointment. 5 demerits assigned. Total: {doc.demerit_points}."
+                )
+                db.add(audit)
+
+                # Notify doctor
+                if doc.user:
+                    safe_dispatch(
+                        send_email_task,
+                        doc.user.email,
+                        "Missed Appointment Penalty - MedPulse AI",
+                        "generic_notification",
+                        {
+                            "title": "Penalty: Missed Appointment",
+                            "message": f"Hello Dr. {doc.user.full_name},\n\nYou missed a scheduled medical consultation with patient {appt.patient.full_name} on {appt.slot_start.strftime('%Y-%m-%d %I:%M %p')} without formal cancellation.\n\nYou have been penalized with 5 demerit points. Your total demerit count is now {doc.demerit_points}/10.{suspension_msg}\n\nBest regards,\nMedPulse AI Administration"
+                        }
+                    )
+                    
+                    # Create in-app notification for doctor
+                    notif_doc = InAppNotification(
+                        user_id=doc.user_id,
+                        title="Penalty: Missed Appointment",
+                        body=f"You missed your consultation with {appt.patient.full_name} on {appt.slot_start.strftime('%Y-%m-%d')}. 5 demerits assigned.",
+                        type="admin_note",
+                        link="/doctor/dashboard"
+                    )
+                    db.add(notif_doc)
+
+                # Notify patient
+                pat = appt.patient
+                safe_dispatch(
+                    send_email_task,
+                    pat.email,
+                    "Appointment Cancelled — Doctor Unavailable",
+                    "generic_notification",
+                    {
+                        "title": "Appointment Cancelled",
+                        "message": f"Hello {pat.full_name},\n\nWe apologize, but your consultation with Dr. {doc.user.full_name} scheduled for {appt.slot_start.strftime('%Y-%m-%d %I:%M %p')} was missed. The slot has been cancelled.\n\nPlease log in to reschedule your appointment at your earliest convenience.\n\nBest regards,\nMedPulse AI Care Team"
+                    }
+                )
+                
+                # Create in-app notification for patient
+                notif_pat = InAppNotification(
+                    user_id=pat.id,
+                    title="Appointment Cancelled — Doctor Unavailable",
+                    body=f"Your consultation with Dr. {doc.user.full_name} was missed by the physician and has been cancelled. Please reschedule.",
+                    type="appointment",
+                    link="/patient/appointments"
+                )
+                db.add(notif_pat)
+
+                # Sync Calendar deletion
+                safe_dispatch(sync_calendar_event_task, appt.id, "delete")
+            await db.commit()
+    run_async(_run())

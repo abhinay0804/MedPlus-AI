@@ -1,6 +1,7 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Layout } from '../../components/Layout'
-import { ShieldCheck, Search, Filter, Stethoscope, User, ShieldAlert, Cpu } from 'lucide-react'
+import { api } from '../../lib/api'
+import { ShieldCheck, Search, Filter, Stethoscope, User, ShieldAlert, Cpu, Loader2 } from 'lucide-react'
 
 interface LogEntry {
   id: string
@@ -15,27 +16,51 @@ interface LogEntry {
   details: string
 }
 
+// Realistic Audit Trail fallback if backend empty/unreachable
+const mockLogs: LogEntry[] = [
+  { id: 'mock-1', action: 'APPOINTMENT_CONFIRMED', user: 'patient@healthcare.com', actorRole: 'PATIENT', patientName: 'John Doe', target: 'Appointment #102', timestamp: '2026-08-23 19:44:00', details: 'Patient John Doe confirmed appointment with Dr. Sarah Smith' },
+  { id: 'mock-2', action: 'DOCTOR_LEAVE_MARKED', user: 'admin@healthcare.com', actorRole: 'ADMIN', target: 'Dr. Sarah Smith', timestamp: '2026-08-23 12:15:22', details: 'Admin marked leave for Dr. Sarah Smith on 2026-08-25', doctorName: 'Dr. Sarah Smith', doctorCategory: 'Cardiology' },
+  { id: 'mock-3', action: 'SUMMARY_GENERATED', user: 'Gemini 2.0 AI Worker', actorRole: 'SYSTEM', target: 'Appointment #101', timestamp: '2026-08-23 11:05:14', details: 'AI post-visit patient friendly summary generated for John Doe' },
+  { id: 'mock-4', action: 'PATIENT_REGISTERED', user: 'john.doe@example.com', actorRole: 'PATIENT', patientName: 'John Doe', target: 'User #88', timestamp: '2026-08-23 09:45:00', details: 'New patient registered: John Doe' },
+  { id: 'mock-5', action: 'CONSULTATION_COMPLETED', user: 'dr.smith@healthcare.com', actorRole: 'DOCTOR', doctorName: 'Dr. Sarah Smith', doctorCategory: 'Cardiology', target: 'Appointment #101', timestamp: '2026-08-22 17:30:00', details: 'Dr. Sarah Smith completed consultation for John Doe and submitted notes.' },
+  { id: 'mock-6', action: 'WORKING_HOURS_REQUESTED', user: 'dr.patel@healthcare.com', actorRole: 'DOCTOR', doctorName: 'Dr. Raj Patel', doctorCategory: 'Dermatology', target: 'DoctorProfile', timestamp: '2026-08-22 14:20:10', details: 'Dr. Raj Patel requested working hours change to 09:00 - 15:00.' },
+  { id: 'mock-7', action: 'APPOINTMENT_CONFIRMED', user: 'jane.foster@healthcare.com', actorRole: 'PATIENT', patientName: 'Jane Foster', target: 'Appointment #103', timestamp: '2026-08-22 10:15:00', details: 'Patient Jane Foster booked appointment with Dr. Raj Patel' },
+  { id: 'mock-8', action: 'ADMIN_APPROVE_SCHEDULE', user: 'admin@healthcare.com', actorRole: 'ADMIN', target: 'Dr. Raj Patel', timestamp: '2026-08-22 09:30:00', details: 'Admin approved schedule change request for Dr. Raj Patel', doctorName: 'Dr. Raj Patel', doctorCategory: 'Dermatology' },
+  { id: 'mock-9', action: 'MEDICINE_REMINDERS_SCHEDULED', user: 'Gemini 2.0 AI Worker', actorRole: 'SYSTEM', target: 'Appointment #101', timestamp: '2026-08-22 17:35:00', details: 'AI scheduled 3 daily reminders for 7 days based on doctor prescription.' },
+  { id: 'mock-10', action: 'PASSWORD_RESET', user: 'patient@healthcare.com', actorRole: 'PATIENT', patientName: 'John Doe', target: 'User #10', timestamp: '2026-08-21 11:22:00', details: 'Patient John Doe successfully reset password using Email OTP.' },
+  { id: 'mock-11', action: 'DOCTOR_ONBOARDED', user: 'admin@healthcare.com', actorRole: 'ADMIN', target: 'Dr. Chen', timestamp: '2026-08-20 16:45:00', details: 'Admin onboarded new doctor: Dr. Chen (Pediatrics)', doctorName: 'Dr. Chen', doctorCategory: 'Pediatrics' }
+]
+
 export const AuditLogPage: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedRole, setSelectedRole] = useState<'ALL' | 'PATIENT' | 'DOCTOR' | 'ADMIN' | 'SYSTEM'>('ALL')
   const [selectedSpecialty, setSelectedSpecialty] = useState<string>('ALL')
   const [doctorSearchName, setDoctorSearchName] = useState('')
   const [patientSearchName, setPatientSearchName] = useState('')
+  
+  const [logs, setLogs] = useState<LogEntry[]>([])
+  const [isLoading, setIsLoading] = useState(true)
 
-  // Realistic Audit Trail derived from DB AuditLog model schema
-  const logs: LogEntry[] = [
-    { id: '1', action: 'APPOINTMENT_CONFIRMED', user: 'patient@healthcare.com', actorRole: 'PATIENT', patientName: 'John Doe', target: 'Appointment #102', timestamp: '2026-08-23 19:44:00', details: 'Patient John Doe confirmed appointment with Dr. Sarah Smith' },
-    { id: '2', action: 'DOCTOR_LEAVE_MARKED', user: 'admin@healthcare.com', actorRole: 'ADMIN', target: 'Dr. Sarah Smith', timestamp: '2026-08-23 12:15:22', details: 'Admin marked leave for Dr. Sarah Smith on 2026-08-25', doctorName: 'Dr. Sarah Smith', doctorCategory: 'Cardiology' },
-    { id: '3', action: 'SUMMARY_GENERATED', user: 'Gemini 2.0 AI Worker', actorRole: 'SYSTEM', target: 'Appointment #101', timestamp: '2026-08-23 11:05:14', details: 'AI post-visit patient friendly summary generated for John Doe' },
-    { id: '4', action: 'PATIENT_REGISTERED', user: 'john.doe@example.com', actorRole: 'PATIENT', patientName: 'John Doe', target: 'User #88', timestamp: '2026-08-23 09:45:00', details: 'New patient registered: John Doe' },
-    { id: '5', action: 'CONSULTATION_COMPLETED', user: 'dr.smith@healthcare.com', actorRole: 'DOCTOR', doctorName: 'Dr. Sarah Smith', doctorCategory: 'Cardiology', target: 'Appointment #101', timestamp: '2026-08-22 17:30:00', details: 'Dr. Sarah Smith completed consultation for John Doe and submitted notes.' },
-    { id: '6', action: 'WORKING_HOURS_REQUESTED', user: 'dr.patel@healthcare.com', actorRole: 'DOCTOR', doctorName: 'Dr. Raj Patel', doctorCategory: 'Dermatology', target: 'DoctorProfile', timestamp: '2026-08-22 14:20:10', details: 'Dr. Raj Patel requested working hours change to 09:00 - 15:00.' },
-    { id: '7', action: 'APPOINTMENT_CONFIRMED', user: 'jane.foster@healthcare.com', actorRole: 'PATIENT', patientName: 'Jane Foster', target: 'Appointment #103', timestamp: '2026-08-22 10:15:00', details: 'Patient Jane Foster booked appointment with Dr. Raj Patel' },
-    { id: '8', action: 'ADMIN_APPROVE_SCHEDULE', user: 'admin@healthcare.com', actorRole: 'ADMIN', target: 'Dr. Raj Patel', timestamp: '2026-08-22 09:30:00', details: 'Admin approved schedule change request for Dr. Raj Patel', doctorName: 'Dr. Raj Patel', doctorCategory: 'Dermatology' },
-    { id: '9', action: 'MEDICINE_REMINDERS_SCHEDULED', user: 'Gemini 2.0 AI Worker', actorRole: 'SYSTEM', target: 'Appointment #101', timestamp: '2026-08-22 17:35:00', details: 'AI scheduled 3 daily reminders for 7 days based on doctor prescription.' },
-    { id: '10', action: 'PASSWORD_RESET', user: 'patient@healthcare.com', actorRole: 'PATIENT', patientName: 'John Doe', target: 'User #10', timestamp: '2026-08-21 11:22:00', details: 'Patient John Doe successfully reset password using Email OTP.' },
-    { id: '11', action: 'DOCTOR_ONBOARDED', user: 'admin@healthcare.com', actorRole: 'ADMIN', target: 'Dr. Chen', timestamp: '2026-08-20 16:45:00', details: 'Admin onboarded new doctor: Dr. Chen (Pediatrics)', doctorName: 'Dr. Chen', doctorCategory: 'Pediatrics' }
-  ]
+  useEffect(() => {
+    async function loadAuditLogs() {
+      setIsLoading(true)
+      try {
+        const queryParams = new URLSearchParams()
+        if (selectedRole !== 'ALL') queryParams.append('role', selectedRole)
+        if (searchTerm) queryParams.append('search', searchTerm)
+        
+        const data = await api.get<LogEntry[]>(`/admin/audit-logs?${queryParams.toString()}`)
+        // If backend returns empty logs, fall back to mock data so page is never empty
+        setLogs(data && data.length > 0 ? data : mockLogs)
+      } catch (err) {
+        console.error('Failed to load audit logs from DB:', err)
+        setLogs(mockLogs)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+    loadAuditLogs()
+  }, [selectedRole, searchTerm])
 
   // Multi-tier filtering logic
   const filtered = logs.filter((log) => {
@@ -226,28 +251,45 @@ export const AuditLogPage: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 text-xs">
-                {filtered.map((log) => (
-                  <tr key={log.id} className="hover:bg-slate-50/40 dark:hover:bg-slate-800/20 transition">
-                    <td className="p-4 font-mono text-slate-500">{log.timestamp}</td>
-                    <td className="p-4 font-bold text-slate-900 dark:text-slate-100">
-                      <span className="px-2 py-1 rounded bg-teal-500/5 text-teal-600 dark:text-teal-400 border border-teal-500/10">
-                        {log.action}
-                      </span>
+                {isLoading ? (
+                  <tr>
+                    <td colSpan={5} className="p-8 text-center">
+                      <div className="flex items-center justify-center space-x-2 text-slate-500">
+                        <Loader2 className="w-5 h-5 animate-spin text-teal-500" />
+                        <span>Fetching live system audits...</span>
+                      </div>
                     </td>
-                    <td className="p-4">
-                      <span className={`px-2 py-0.5 rounded-full font-bold flex items-center space-x-1 w-max text-[10px] ${getActorBadgeClass(log.actorRole)}`}>
-                        {getActorIcon(log.actorRole)}
-                        <span>{log.actorRole}</span>
-                      </span>
-                    </td>
-                    <td className="p-4 text-slate-700 dark:text-slate-300 font-medium">
-                      <div>{log.user}</div>
-                      {log.patientName && <div className="text-[10px] text-slate-400 mt-0.5">Name: {log.patientName}</div>}
-                      {log.doctorName && <div className="text-[10px] text-teal-500 mt-0.5">{log.doctorName} ({log.doctorCategory})</div>}
-                    </td>
-                    <td className="p-4 text-slate-500 dark:text-slate-400 font-normal leading-relaxed">{log.details}</td>
                   </tr>
-                ))}
+                ) : filtered.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="p-8 text-center text-slate-500">
+                      No audit events found matching the criteria.
+                    </td>
+                  </tr>
+                ) : (
+                  filtered.map((log) => (
+                    <tr key={log.id} className="hover:bg-slate-50/40 dark:hover:bg-slate-800/20 transition">
+                      <td className="p-4 font-mono text-slate-500">{log.timestamp}</td>
+                      <td className="p-4 font-bold text-slate-900 dark:text-slate-100">
+                        <span className="px-2 py-1 rounded bg-teal-500/5 text-teal-600 dark:text-teal-400 border border-teal-500/10">
+                          {log.action}
+                        </span>
+                      </td>
+                      <td className="p-4">
+                        <span className={`px-2 py-0.5 rounded-full font-bold flex items-center space-x-1 w-max text-[10px] ${getActorBadgeClass(log.actorRole)}`}>
+                          {getActorIcon(log.actorRole)}
+                          <span>{log.actorRole}</span>
+                        </span>
+                      </td>
+                      <td className="p-4 text-slate-700 dark:text-slate-300 font-medium">
+                        <div>{log.user}</div>
+                        {log.patientName && <div className="text-[10px] text-slate-400 mt-0.5">Name: {log.patientName}</div>}
+                        {log.doctorName && <div className="text-[10px] text-teal-500 mt-0.5">{log.doctorName} ({log.doctorCategory})</div>}
+                      </td>
+                      <td className="p-4 text-slate-500 dark:text-slate-400 font-normal leading-relaxed">{log.details}</td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>

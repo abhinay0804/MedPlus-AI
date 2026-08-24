@@ -183,6 +183,44 @@ async def mark_appointment_complete(
 
     updated = await repo.update_status(appointment_id, AppointmentStatus.COMPLETED)
 
+    # Find next confirmed appointment for this doctor
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+    from server.database.models import Appointment
+    next_appt_query = select(Appointment).options(
+        selectinload(Appointment.patient),
+        selectinload(Appointment.symptom_form)
+    ).where(
+        Appointment.doctor_id == profile.id,
+        Appointment.status == AppointmentStatus.CONFIRMED,
+        Appointment.slot_start > appt.slot_start
+    ).order_by(Appointment.slot_start.asc()).limit(1)
+    
+    next_appt = (await db.execute(next_appt_query)).scalar_one_or_none()
+    
+    next_info = "\n\nNo upcoming appointments scheduled."
+    if next_appt:
+        urgency = "LOW"
+        if next_appt.symptom_form and next_appt.symptom_form.pre_visit_summary:
+            urgency = next_appt.symptom_form.pre_visit_summary.urgency_level
+        next_time_str = next_appt.slot_start.strftime("%Y-%m-%d %I:%M %p")
+        next_info = f"\n\nUpcoming Appointment Details:\n- Patient: {next_appt.patient.full_name}\n- Date/Time: {next_time_str}\n- Severity/Triage: {urgency}"
+        
+    # Send completion email to doctor
+    if profile.user:
+        from server.routes.patient_routes import safe_dispatch
+        from microservices.tasks import send_email_task
+        safe_dispatch(
+            send_email_task,
+            profile.user.email,
+            "Consultation Completed Successfully - MedPulse AI",
+            "generic_notification",
+            {
+                "title": "Consultation Completed Successfully",
+                "message": f"Hello Dr. {profile.user.full_name},\n\nYou have successfully completed the medical consultation for patient {appt.patient.full_name} (Appointment ID: {appointment_id}).\n\nThe post-visit patient care summary and clinical summary have been recorded.{next_info}\n\nBest regards,\nMedPulse AI Care Team"
+            }
+        )
+
     # Dispatch completed email notification to patient
     try:
         from server.services.notification_service import NotificationService
@@ -378,6 +416,11 @@ async def verify_start_otp(
     profile = await doc_repo.get_by_user_id(current_user.id)
     if not profile:
         raise NotFoundError("Doctor profile not found")
+    if profile.is_suspended:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Your profile is suspended due to accumulated demerit points. Please contact the administrator.",
+        )
 
     repo = AppointmentRepository(db)
     appt = await repo.get_by_id(appointment_id)
@@ -396,6 +439,8 @@ async def verify_start_otp(
             status_code=400,
             detail="Invalid verification code. Please request the correct 4-digit OTP from the patient.",
         )
+
+    appt.is_started = True
 
     # Log to AuditLog
     from server.database.models import AuditLog
@@ -439,9 +484,13 @@ async def reject_appointment(
     return updated
 
 
+class DoctorCancelInput(BaseModel):
+    reason: str = ""
+
 @router.post("/appointments/{appointment_id}/cancel", response_model=AppointmentResponse, dependencies=[doctor_guard])
 async def cancel_appointment_by_doctor(
     appointment_id: str,
+    data: DoctorCancelInput,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -451,7 +500,7 @@ async def cancel_appointment_by_doctor(
     if not profile:
         raise NotFoundError("Doctor profile not found")
 
-    updated = await cancel_by_doctor(db, appointment_id, profile.id)
+    updated = await cancel_by_doctor(db, appointment_id, profile.id, reason=data.reason)
     await db.commit()
     return updated
 
@@ -633,3 +682,269 @@ async def list_doctor_leave_requests(
         }
         for r in requests
     ]
+
+# --- Admin Notes & Directives Inbox ---
+
+@router.get("/notes")
+async def get_doctor_admin_notes(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Retrieve all administrative directives sent to the logged-in doctor."""
+    doc_repo = DoctorRepository(db)
+    profile = await doc_repo.get_by_user_id(current_user.id)
+    if not profile:
+        raise NotFoundError("Doctor profile not found")
+        
+    from server.database.models import AdminNote
+    from sqlalchemy import select
+    stmt = select(AdminNote).where(AdminNote.doctor_id == profile.id).order_by(AdminNote.created_at.desc())
+    res = await db.execute(stmt)
+    notes = res.scalars().all()
+    return notes
+
+@router.put("/notes/{note_id}/read")
+async def mark_admin_note_read(
+    note_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Mark an administrative directive note as read."""
+    doc_repo = DoctorRepository(db)
+    profile = await doc_repo.get_by_user_id(current_user.id)
+    if not profile:
+        raise NotFoundError("Doctor profile not found")
+        
+    from server.database.models import AdminNote
+    from sqlalchemy import select
+    stmt = select(AdminNote).where(AdminNote.id == note_id, AdminNote.doctor_id == profile.id)
+    res = await db.execute(stmt)
+    note = res.scalar_one_or_none()
+    if not note:
+        raise HTTPException(status_code=404, detail="Administrative note not found")
+        
+    note.is_read = True
+    await db.commit()
+    return {"success": True}
+
+# --- Patient Visit History Timeline (Cross-Visit Context) ---
+
+@router.get("/appointments/{appointment_id}/patient-history")
+async def get_patient_history(
+    appointment_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Retrieve patient's clinical history across all past completed or cancelled appointments."""
+    doc_repo = DoctorRepository(db)
+    profile = await doc_repo.get_by_user_id(current_user.id)
+    if not profile:
+        raise NotFoundError("Doctor profile not found")
+        
+    from server.database.models import Appointment
+    from sqlalchemy import select
+    appt_stmt = select(Appointment).where(Appointment.id == appointment_id)
+    res = await db.execute(appt_stmt)
+    appt = res.scalar_one_or_none()
+    if not appt:
+        raise HTTPException(status_code=404, detail="Appointment not found")
+        
+    if appt.doctor_id != profile.id:
+        raise HTTPException(status_code=403, detail="You do not have access to this patient's medical records")
+        
+    from sqlalchemy.orm import selectinload
+    history_stmt = (
+        select(Appointment)
+        .options(
+            selectinload(Appointment.doctor).selectinload(DoctorProfile.user),
+            selectinload(Appointment.symptom_form),
+            selectinload(Appointment.post_visit_note)
+        )
+        .where(
+            Appointment.patient_id == appt.patient_id,
+            Appointment.id != appointment_id,
+            Appointment.status.in_([AppointmentStatus.COMPLETED, AppointmentStatus.CANCELLED])
+        )
+        .order_by(Appointment.slot_start.desc())
+    )
+    history_res = await db.execute(history_stmt)
+    appointments = history_res.scalars().all()
+    
+    results = []
+    for a in appointments:
+        results.append({
+            "id": a.id,
+            "slot_start": a.slot_start.isoformat(),
+            "status": a.status,
+            "doctor_name": a.doctor.user.full_name,
+            "specialisation": a.doctor.specialisation,
+            "symptoms": a.symptom_form.symptoms_text if a.symptom_form else None,
+            "urgency": a.symptom_form.urgency_level if a.symptom_form else None,
+            "pre_visit_summary": a.symptom_form.pre_visit_summary if a.symptom_form else None,
+            "doctor_notes": a.post_visit_note.doctor_notes if a.post_visit_note else None,
+            "prescription": a.post_visit_note.prescription_text if a.post_visit_note else None,
+            "patient_summary": a.post_visit_note.patient_summary if a.post_visit_note else None,
+        })
+    return results
+
+
+@router.get("/appointments/{appointment_id}/patient-history-ai-summary")
+async def get_patient_history_ai_summary(
+    appointment_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Generate categorized patient clinical history summary and diagnostic triage suggestions using Gemini."""
+    doc_repo = DoctorRepository(db)
+    profile = await doc_repo.get_by_user_id(current_user.id)
+    if not profile:
+        raise NotFoundError("Doctor profile not found")
+        
+    from server.database.models import Appointment, DoctorProfile
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+    
+    appt_stmt = (
+        select(Appointment)
+        .options(selectinload(Appointment.symptom_form))
+        .where(Appointment.id == appointment_id)
+    )
+    res = await db.execute(appt_stmt)
+    appt = res.scalar_one_or_none()
+    if not appt:
+        raise HTTPException(status_code=404, detail="Appointment not found")
+        
+    if appt.doctor_id != profile.id:
+        raise HTTPException(status_code=403, detail="You do not have access to this patient's medical records")
+
+    # Query all completed or cancelled past appointments
+    history_stmt = (
+        select(Appointment)
+        .options(
+            selectinload(Appointment.doctor).selectinload(DoctorProfile.user),
+            selectinload(Appointment.symptom_form),
+            selectinload(Appointment.post_visit_note)
+        )
+        .where(
+            Appointment.patient_id == appt.patient_id,
+            Appointment.id != appointment_id,
+            Appointment.status.in_([AppointmentStatus.COMPLETED, AppointmentStatus.CANCELLED])
+        )
+        .order_by(Appointment.slot_start.desc())
+    )
+    history_res = await db.execute(history_stmt)
+    appointments = history_res.scalars().all()
+
+    if not appointments:
+        return {
+            "specialty_summary": "No previous records found.",
+            "general_medical_summary": "No other historical records found.",
+            "diagnostic_factors": "This is the patient's first recorded appointment at the clinic."
+        }
+
+    # Format into raw dicts for LLM processing
+    formatted_history = []
+    for a in appointments:
+        formatted_history.append({
+            "slot_start": a.slot_start.isoformat(),
+            "specialisation": a.doctor.specialisation,
+            "doctor_name": a.doctor.user.full_name,
+            "symptoms": a.symptom_form.symptoms_text if a.symptom_form else None,
+            "doctor_notes": a.post_visit_note.doctor_notes if a.post_visit_note else None,
+            "prescription": a.post_visit_note.prescription_text if a.post_visit_note else None,
+        })
+
+    from server.services.llm_service import generate_patient_longitudinal_summary
+    current_symptoms = appt.symptom_form.symptoms_text if appt.symptom_form else ""
+    summary = await generate_patient_longitudinal_summary(
+        current_specialty=profile.specialisation,
+        current_symptoms=current_symptoms,
+        history=formatted_history
+    )
+    return {
+        "specialty_summary": summary.get("specialty_history", ""),
+        "general_medical_summary": summary.get("general_medical_context", ""),
+        "diagnostic_factors": summary.get("diagnostic_factors", "")
+    }
+
+
+# --- Doctor Personal Analytics & Trends ---
+
+@router.get("/analytics")
+async def get_doctor_analytics(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Compile aggregated clinical performance data, monthly bookings, ratings, triage trends, and workload heatmaps."""
+    doc_repo = DoctorRepository(db)
+    profile = await doc_repo.get_by_user_id(current_user.id)
+    if not profile:
+        raise NotFoundError("Doctor profile not found")
+        
+    from server.database.models import Appointment, DoctorReview, SymptomForm
+    from sqlalchemy import select, func
+    
+    # Aggregated appointment counts
+    stmt = select(Appointment.status, func.count(Appointment.id)).where(Appointment.doctor_id == profile.id).group_by(Appointment.status)
+    res = await db.execute(stmt)
+    stats_rows = res.all()
+    stats = {status.value if hasattr(status, 'value') else str(status): count for status, count in stats_rows}
+    
+    total_completed = stats.get("COMPLETED", 0)
+    total_cancelled = stats.get("CANCELLED", 0)
+    total_confirmed = stats.get("CONFIRMED", 0)
+    
+    # Monthly Completed appointments
+    monthly_stmt = (
+        select(func.strftime('%Y-%m', Appointment.slot_start), func.count(Appointment.id))
+        .where(Appointment.doctor_id == profile.id, Appointment.status == AppointmentStatus.COMPLETED)
+        .group_by(func.strftime('%Y-%m', Appointment.slot_start))
+        .order_by(func.strftime('%Y-%m', Appointment.slot_start))
+    )
+    monthly_res = await db.execute(monthly_stmt)
+    monthly_data = [{"month": row[0], "completed": row[1]} for row in monthly_res.all()]
+    
+    # Average rating and review count
+    rating_stmt = select(func.avg(DoctorReview.rating), func.count(DoctorReview.id)).where(DoctorReview.doctor_id == profile.id)
+    rating_res = await db.execute(rating_stmt)
+    avg_rating, review_count = rating_res.first()
+    
+    # Urgency levels distribution
+    urgency_stmt = (
+        select(SymptomForm.urgency_level, func.count(SymptomForm.id))
+        .join(Appointment, SymptomForm.appointment_id == Appointment.id)
+        .where(Appointment.doctor_id == profile.id)
+        .group_by(SymptomForm.urgency_level)
+    )
+    urgency_res = await db.execute(urgency_stmt)
+    urgency_data = {level.value if hasattr(level, 'value') else str(level): count for level, count in urgency_res.all()}
+    
+    # Heatmap data for bussiest hours (hour, count)
+    heatmap_stmt = (
+        select(
+            func.strftime('%w', Appointment.slot_start),
+            func.strftime('%H', Appointment.slot_start),
+            func.count(Appointment.id)
+        )
+        .where(Appointment.doctor_id == profile.id, Appointment.status == AppointmentStatus.COMPLETED)
+        .group_by(
+            func.strftime('%w', Appointment.slot_start),
+            func.strftime('%H', Appointment.slot_start)
+        )
+    )
+    heatmap_res = await db.execute(heatmap_stmt)
+    heatmap_data = [
+        {"day": int(row[0]), "hour": int(row[1]), "count": row[2]}
+        for row in heatmap_res.all()
+    ]
+    
+    return {
+        "total_completed": total_completed,
+        "total_cancelled": total_cancelled,
+        "total_confirmed": total_confirmed,
+        "average_rating": float(avg_rating) if avg_rating else 0.0,
+        "review_count": review_count,
+        "monthly_data": monthly_data,
+        "urgency_data": urgency_data,
+        "heatmap_data": heatmap_data
+    }

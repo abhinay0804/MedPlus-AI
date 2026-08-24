@@ -58,6 +58,7 @@ class User(Base):
     doctor_profile: Mapped["DoctorProfile"] = relationship("DoctorProfile", back_populates="user", uselist=False, cascade="all, delete-orphan")
     patient_appointments: Mapped[list["Appointment"]] = relationship("Appointment", back_populates="patient", foreign_keys="Appointment.patient_id")
     reminders: Mapped[list["MedicationReminder"]] = relationship("MedicationReminder", back_populates="patient")
+    notifications: Mapped[list["InAppNotification"]] = relationship("InAppNotification", back_populates="user", cascade="all, delete-orphan")
 
 class DoctorProfile(Base):
     __tablename__ = "doctor_profiles"
@@ -69,6 +70,8 @@ class DoctorProfile(Base):
     slot_duration_minutes: Mapped[int] = mapped_column(Integer, default=30, nullable=False)
     intake_questions: Mapped[list[str]] = mapped_column(JSON, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    demerit_points: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    is_suspended: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
     # Relationships
@@ -77,6 +80,7 @@ class DoctorProfile(Base):
     leave_requests: Mapped[list["DoctorLeaveRequest"]] = relationship("DoctorLeaveRequest", back_populates="doctor", cascade="all, delete-orphan")
     doctor_appointments: Mapped[list["Appointment"]] = relationship("Appointment", back_populates="doctor", foreign_keys="Appointment.doctor_id")
     reviews: Mapped[list["DoctorReview"]] = relationship("DoctorReview", back_populates="doctor")
+    admin_notes: Mapped[list["AdminNote"]] = relationship("AdminNote", back_populates="doctor", cascade="all, delete-orphan")
 
 class DoctorLeave(Base):
     __tablename__ = "doctor_leaves"
@@ -120,6 +124,9 @@ class Appointment(Base):
     reminder_sent: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     rescheduled_to_id: Mapped[str] = mapped_column(String(36), nullable=True)
     start_otp: Mapped[str] = mapped_column(String(4), nullable=True)
+    is_started: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    start_reminder_sent: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    reassigned_by_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
@@ -254,3 +261,32 @@ class EmailOTP(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     is_used: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+class AdminNote(Base):
+    __tablename__ = "admin_notes"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    doctor_id: Mapped[str] = mapped_column(String(36), ForeignKey("doctor_profiles.id", ondelete="CASCADE"), nullable=False, index=True)
+    subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    priority: Mapped[str] = mapped_column(String(20), default="ROUTINE", nullable=False) # URGENT, IMPORTANT, ROUTINE
+    is_read: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Relationships
+    doctor: Mapped["DoctorProfile"] = relationship("DoctorProfile", back_populates="admin_notes")
+
+class InAppNotification(Base):
+    __tablename__ = "in_app_notifications"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    type: Mapped[str] = mapped_column(String(50), nullable=False) # "appointment", "system", "admin_note", "medication"
+    is_read: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    link: Mapped[str] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Relationships
+    user: Mapped["User"] = relationship("User", back_populates="notifications")

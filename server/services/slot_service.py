@@ -180,6 +180,7 @@ async def generate_slots(
             "slot_start": s_start,
             "slot_end": s_end,
             "is_available": (not is_slot_occupied(s_start)) and is_future,
+            "is_past": not is_future,
             "doctor_id": doctor_id,
         })
 
@@ -433,8 +434,12 @@ async def release_slot(
             f"Appointment is already '{appt.status.value}' and cannot be cancelled"
         )
 
+    was_held_only = appt.status == AppointmentStatus.HELD
     appt.status = AppointmentStatus.CANCELLED
-    appt.hold_expires_at = None
+    # Preserve hold_expires_at for HELD-only appointments so they are
+    # filtered out of patient appointment lists (never-confirmed bookings).
+    if not was_held_only:
+        appt.hold_expires_at = None
     await db.flush()
     await db.refresh(appt)
     return appt
@@ -536,14 +541,15 @@ async def cancel_by_doctor(
     db: AsyncSession,
     appointment_id: str,
     doctor_id: str,
+    reason: str = "",
 ) -> Appointment:
     """
     Cancel appointment by doctor.
     If the appointment is CONFIRMED, attempts to auto-reschedule to another doctor in the same specialty on the same day.
     Sorts available slots in ascending order of proximity to the original time.
-    If no doctor/slot is available, raises SlotConflictError and blocks the cancellation.
+    If no doctor/slot is available, marks as CANCELLED and notifies the patient.
     """
-    from server.database.models import User
+    from server.database.models import User, InAppNotification
     result = await db.execute(
         select(Appointment)
         .options(selectinload(Appointment.symptom_form))
@@ -558,8 +564,130 @@ async def cancel_by_doctor(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You can only cancel your own appointments",
         )
+    if appt.reassigned_by_admin:
+        from fastapi import HTTPException, status
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cancellation restricted. This appointment was reassigned by administration.",
+        )
     if appt.status == AppointmentStatus.CANCELLED:
         raise SlotConflictError("Appointment is already CANCELLED")
+
+    result_doc = await db.execute(
+        select(DoctorProfile).options(selectinload(DoctorProfile.user)).where(DoctorProfile.id == doctor_id)
+    )
+    orig_doc = result_doc.scalar_one()
+
+    # Calculate demerits for confirmed appointments
+    if appt.status == AppointmentStatus.CONFIRMED:
+        base_points = 1
+        if appt.symptom_form and appt.symptom_form.pre_visit_summary:
+            summary = appt.symptom_form.pre_visit_summary
+            urgency = summary.get("urgency_level") if isinstance(summary, dict) else getattr(summary, "urgency_level", None)
+            if urgency == "HIGH":
+                base_points = 5
+            elif urgency == "MEDIUM":
+                base_points = 3
+            elif urgency == "LOW":
+                base_points = 1
+
+        # Check if other doctors are available for this specific slot start/end
+        slot_start = appt.slot_start
+        slot_end = appt.slot_end
+        day_name = slot_start.strftime("%a").lower()
+        slot_start_str = slot_start.strftime("%H:%M")
+        slot_end_str = slot_end.strftime("%H:%M")
+        target_date = slot_start.date()
+
+        from server.services.slot_service import _is_on_leave
+        specialty = orig_doc.specialisation
+
+        result_others = await db.execute(
+            select(DoctorProfile)
+            .where(
+                DoctorProfile.specialisation == specialty,
+                DoctorProfile.id != doctor_id,
+                DoctorProfile.is_active == True,
+                DoctorProfile.is_suspended == False,
+            )
+        )
+        other_docs = result_others.scalars().all()
+
+        avail_others_count = 0
+        for doc in other_docs:
+            w_hours = doc.working_hours or {}
+            day_config = w_hours.get(day_name)
+            if not day_config or not day_config.get("enabled"):
+                continue
+            if not (slot_start_str >= day_config.get("start", "09:00") and slot_end_str <= day_config.get("end", "17:00")):
+                continue
+            if await _is_on_leave(db, doc.id, target_date):
+                continue
+            # Check overlap
+            overlap_query = select(Appointment).where(
+                Appointment.doctor_id == doc.id,
+                Appointment.status.in_([AppointmentStatus.CONFIRMED, AppointmentStatus.HELD]),
+                Appointment.slot_start < slot_end,
+                Appointment.slot_end > slot_start,
+                Appointment.id != appointment_id
+            )
+            overlaps = (await db.execute(overlap_query)).scalars().all()
+            active_overlap = False
+            for o in overlaps:
+                if o.status == AppointmentStatus.HELD:
+                    if o.hold_expires_at and o.hold_expires_at > datetime.utcnow():
+                        active_overlap = True
+                        break
+                else:
+                    active_overlap = True
+                    break
+            if not active_overlap:
+                avail_others_count += 1
+
+        availability_penalty = 0 if avail_others_count > 0 else 3
+
+        # Call Gemini to classify the reason context
+        from server.services.llm_service import analyze_cancellation_reason
+        reason_category = await analyze_cancellation_reason(reason)
+        
+        multiplier = 1.0
+        if reason_category == "EMERGENCY":
+            multiplier = 0.0
+        elif reason_category == "CONVENIENCE":
+            multiplier = 1.5
+        elif reason_category == "UNJUSTIFIED":
+            multiplier = 2.0
+
+        demerits_earned = int((base_points + availability_penalty) * multiplier)
+
+        # Add to Doctor demerits
+        orig_doc.demerit_points += demerits_earned
+        if orig_doc.demerit_points >= 10:
+            orig_doc.is_suspended = True
+            
+            # In-app notification for suspension
+            suspension_notif = InAppNotification(
+                user_id=orig_doc.user_id,
+                title="Profile Suspended due to Demerits",
+                body=f"Your profile has been suspended after earning {demerits_earned} demerit points (total: {orig_doc.demerit_points}). Access locked.",
+                type="admin_note",
+                link="/doctor/dashboard"
+            )
+            db.add(suspension_notif)
+            
+            # Send suspension email
+            from server.routes.patient_routes import safe_dispatch
+            from microservices.tasks import send_email_task
+            safe_dispatch(
+                send_email_task,
+                orig_doc.user.email,
+                "Account Suspended — MedPulse AI",
+                "generic_notification",
+                {
+                    "title": "Account Suspended",
+                    "message": f"Hello Dr. {orig_doc.user.full_name},\n\nYour clinic access has been suspended because you have reached {orig_doc.demerit_points} demerit points.\n\nLatest Cancellation Penalty: {demerits_earned} points (Reason category: {reason_category}).\n\nPlease contact the clinic administrator to review your profile and lift the suspension.\n\nBest regards,\nMedPulse AI Administration"
+                }
+            )
 
     if appt.status != AppointmentStatus.CONFIRMED:
         appt.status = AppointmentStatus.CANCELLED
@@ -572,6 +700,7 @@ async def cancel_by_doctor(
     )
     orig_doc = result_doc.scalar_one()
     specialty = orig_doc.specialisation
+    orig_start = appt.slot_start
 
     result_others = await db.execute(
         select(DoctorProfile)
@@ -585,9 +714,27 @@ async def cancel_by_doctor(
     other_docs = result_others.scalars().all()
 
     if not other_docs:
-        raise SlotConflictError(
-            "No other matching specialists are available to accommodate the patient's appointment on this day. Cancellation cannot be processed."
+        appt.status = AppointmentStatus.CANCELLED
+        appt.hold_expires_at = None
+        await db.flush()
+        
+        # Notify patient
+        from server.routes.patient_routes import safe_dispatch
+        from microservices.tasks import send_email_task, sync_calendar_event_task
+        result_pat = await db.execute(select(User).where(User.id == appt.patient_id))
+        pat = result_pat.scalar_one()
+        safe_dispatch(
+            send_email_task,
+            to_email=pat.email,
+            subject="Appointment Cancelled — Doctor Unavailable",
+            template_name="generic_notification",
+            context={
+                "title": "Appointment Cancelled",
+                "message": f"Hello {pat.full_name},\n\nWe regret to inform you that your consultation with Dr. {orig_doc.user.full_name} scheduled for {orig_start.strftime('%Y-%m-%d %I:%M %p')} has been cancelled as the doctor is unavailable and no other specialists are free.\n\nPlease visit the portal to schedule another slot.\n\nBest regards,\nMedPulse AI Care Team"
+            },
         )
+        safe_dispatch(sync_calendar_event_task, appt.id, "delete")
+        return appt
 
     slot_date = appt.slot_start.date()
     orig_start = appt.slot_start
@@ -600,9 +747,27 @@ async def cancel_by_doctor(
                 candidate_slots.append((doc, s))
 
     if not candidate_slots:
-        raise SlotConflictError(
-            "No other matching specialists are available to accommodate the patient's appointment on this day. Cancellation cannot be processed."
+        appt.status = AppointmentStatus.CANCELLED
+        appt.hold_expires_at = None
+        await db.flush()
+        
+        # Notify patient
+        from server.routes.patient_routes import safe_dispatch
+        from microservices.tasks import send_email_task, sync_calendar_event_task
+        result_pat = await db.execute(select(User).where(User.id == appt.patient_id))
+        pat = result_pat.scalar_one()
+        safe_dispatch(
+            send_email_task,
+            to_email=pat.email,
+            subject="Appointment Cancelled — Doctor Unavailable",
+            template_name="generic_notification",
+            context={
+                "title": "Appointment Cancelled",
+                "message": f"Hello {pat.full_name},\n\nWe regret to inform you that your consultation with Dr. {orig_doc.user.full_name} scheduled for {orig_start.strftime('%Y-%m-%d %I:%M %p')} has been cancelled as the doctor is unavailable and no other specialists are free.\n\nPlease visit the portal to schedule another slot.\n\nBest regards,\nMedPulse AI Care Team"
+            },
         )
+        safe_dispatch(sync_calendar_event_task, appt.id, "delete")
+        return appt
 
     candidate_slots.sort(key=lambda item: abs((item[1].slot_start - orig_start).total_seconds()))
     chosen_doc, chosen_slot = candidate_slots[0]

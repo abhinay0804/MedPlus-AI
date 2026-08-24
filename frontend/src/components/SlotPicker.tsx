@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { Slot } from '../types'
 import { Clock, Calendar as CalendarIcon, CheckCircle2, AlertCircle } from 'lucide-react'
 import { SkeletonSlotGrid } from './SkeletonLoader'
+import { parseDate } from '../lib/utils'
 
 interface SlotPickerProps {
   slots: Slot[]
@@ -35,12 +36,14 @@ export const SlotPicker: React.FC<SlotPickerProps> = ({
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 py-2">
       {slots.map((slot, idx) => {
-        const startTime = new Date(slot.slot_start).toLocaleTimeString([], {
+        const startTime = parseDate(slot.slot_start).toLocaleTimeString([], {
           hour: '2-digit',
           minute: '2-digit',
         })
         const isSelected = selectedSlot?.slot_start === slot.slot_start
-        const isAvailable = slot.is_available
+        const slotDate = parseDate(slot.slot_start)
+        const isPast = slotDate.getTime() < Date.now()
+        const isAvailable = slot.is_available && !isPast
         const isPatientConflict = slot.is_patient_conflict
 
         return (
@@ -68,7 +71,9 @@ export const SlotPicker: React.FC<SlotPickerProps> = ({
             ) : isPatientConflict ? (
               <span className="text-[10px] uppercase font-bold text-rose-600 dark:text-rose-400 bg-rose-500/20 px-1.5 py-0.5 rounded border border-rose-500/30">My Booking</span>
             ) : !isAvailable ? (
-              <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-slate-600">Booked</span>
+              <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-slate-600">
+                {slot.is_past || isPast ? 'Past' : 'Booked'}
+              </span>
             ) : null}
           </button>
         )

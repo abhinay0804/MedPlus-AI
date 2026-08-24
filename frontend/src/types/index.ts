@@ -39,6 +39,8 @@ export interface DoctorProfile {
   average_rating?: number
   reviews_count?: number
   is_active: boolean
+  demerit_points?: number
+  is_suspended?: boolean
   created_at: string
 }
 
@@ -57,6 +59,7 @@ export interface Slot {
   doctor_id: string
   is_patient_conflict?: boolean
   conflicting_appointment_id?: string
+  is_past?: boolean
 }
 
 export interface SymptomForm {
@@ -94,6 +97,9 @@ export interface Appointment {
   hold_expires_at?: string
   rescheduled_to_id?: string
   start_otp?: string
+  is_started?: boolean
+  start_reminder_sent?: boolean
+  reassigned_by_admin?: boolean
   created_at: string
   updated_at: string
   doctor?: DoctorProfile
