@@ -1,4 +1,4 @@
-<![CDATA[# 🏥 MedPulse AI — Enterprise Smart Clinic & Practice Management Platform
+# 🏥 MedPulse AI — Enterprise Smart Clinic & Practice Management Platform
 
 <p align="center">
   <strong>A production-grade, AI-first clinical appointment management system featuring Google Gemini-powered triage, zero double-booking concurrency control, real-time WebSocket updates, and an automated doctor accountability engine.</strong>
@@ -668,4 +668,3 @@ sequenceDiagram
 <p align="center">
   <strong>Built with ❤️ using FastAPI, React, Google Gemini, and a commitment to zero-downtime clinical operations.</strong>
 </p>
-]]>
