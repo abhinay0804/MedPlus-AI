@@ -323,7 +323,7 @@ $$T_{\text{wait}} = 2^{\text{retry\_number}} + \text{jitter}$$
 
 ---
 
-## 🧪 Tests & Integration Suite
+## 🧪 Tests/Integration-Tests
 
 The integration test suite resides in the `/tests` directory:
 - [test_admin_routes.py](file:///mnt/shared/Projects/Unthinkable/tests/integration/test_admin_routes.py): Validates doctor creations, working hour edits, and admin reassignments.
