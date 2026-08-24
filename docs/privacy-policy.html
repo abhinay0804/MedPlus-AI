@@ -77,6 +77,7 @@
         <ul>
             <li><strong>Account Information:</strong> Name, email address, phone number, and role (patient, doctor, or administrator) provided during registration.</li>
             <li><strong>Health Information:</strong> Symptom descriptions, medical questionnaire responses, appointment details, prescriptions, and AI-generated triage assessments provided voluntarily by users.</li>
+            <li><strong>Feedback & Reviews:</strong> Patient-submitted ratings (1 to 5 stars), clinical feedback comments, and admin-issued directive notes.</li>
             <li><strong>Calendar Data:</strong> When you connect your Google Calendar, we access your calendar to create, update, and delete appointment events on your behalf. We only interact with events created by MedPulse AI.</li>
             <li><strong>Usage Data:</strong> Log data, device information, and interaction patterns to improve service quality.</li>
             <li><strong>Communication Data:</strong> Email addresses used for appointment reminders, medication notifications, and system alerts.</li>
@@ -90,7 +91,8 @@
             <li>To send appointment confirmations, reminders, medication alerts, and rescheduling notifications via email.</li>
             <li>To sync appointment events with your Google Calendar when you grant calendar access.</li>
             <li>To generate AI-powered health insights, pre-visit summaries, and prescription analyses using Google Gemini.</li>
-            <li>To enable administrative functions such as doctor verification, leave management, and system analytics.</li>
+            <li>To enable administrative functions such as doctor verification, leave management, schedule approvals, and system analytics.</li>
+            <li>To analyze doctor ratings and patient feedback metrics using Gemini AI to generate operational audits and performance appraisals for hospital administrators.</li>
         </ul>
 
         <h2>3. Google Calendar Integration</h2>
@@ -108,8 +110,8 @@
         <p>We do not sell, trade, or rent your personal information to third parties. We may share information in the following circumstances:</p>
         <ul>
             <li><strong>With Healthcare Providers:</strong> Your health information is shared with doctors you book appointments with, to facilitate medical consultations.</li>
-            <li><strong>AI Processing:</strong> Symptom data and medical questionnaire responses are processed by Google Gemini AI to generate triage assessments and pre-visit summaries. This data is sent securely and is not stored by the AI provider beyond the processing session.</li>
-            <li><strong>Email Services:</strong> We use Gmail SMTP to send transactional emails (appointment confirmations, reminders, etc.).</li>
+            <li><strong>AI Processing:</strong> Patient symptom text is processed by Gemini AI to generate triage summaries and urgency classifications. Doctor consultation notes and prescriptions are parsed by Gemini AI to extract structured daily medication reminders. Patient review feedback comments and doctor workload metrics are synthesized by Gemini AI to generate administrative practice audits. All data is transmitted securely and is not stored or trained on by the AI provider.</li>
+            <li><strong>Email Services:</strong> We use Gmail SMTP to send transactional emails (appointment confirmations, medication reminders, etc.).</li>
             <li><strong>Legal Requirements:</strong> We may disclose information if required by law or to protect the rights and safety of our users.</li>
         </ul>
 
