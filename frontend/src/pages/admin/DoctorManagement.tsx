@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { Layout } from '../../components/Layout'
 import { api } from '../../lib/api'
 import { DoctorProfile, DoctorLeave } from '../../types'
+import { Link } from 'react-router-dom'
 import {
   Users,
   Stethoscope,
@@ -11,6 +12,7 @@ import {
   Check,
   X,
   AlertCircle,
+  TrendingUp,
 } from 'lucide-react'
 
 export const DoctorManagement: React.FC = () => {
@@ -174,16 +176,29 @@ export const DoctorManagement: React.FC = () => {
                           {doctor.is_active ? 'ACTIVE' : 'INACTIVE'}
                         </span>
                       </td>
-                      <td className="p-4 text-right space-x-2">
+                      <td className="p-4 text-right space-x-2 flex items-center justify-end">
+                        <Link
+                          to={`/admin/doctors/${doctor.id}/performance`}
+                          className="px-3 py-1.5 bg-teal-550/10 text-teal-400 hover:bg-teal-500/20 border border-teal-500/30 rounded-lg text-xs font-bold transition flex items-center space-x-1"
+                        >
+                          <TrendingUp className="w-3.5 h-3.5" />
+                          <span>Performance</span>
+                        </Link>
+                        <Link
+                          to={`/admin/doctors/${doctor.id}`}
+                          className="px-3 py-1.5 bg-slate-800 hover:bg-slate-750 text-slate-350 rounded-lg text-xs font-bold border border-slate-700 transition"
+                        >
+                          Profile
+                        </Link>
                         <button
                           onClick={() => setShowLeaveModal(doctor)}
-                          className="px-3 py-1.5 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 border border-amber-500/30 rounded-lg text-xs font-bold transition"
+                          className="px-3 py-1.5 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 border border-amber-500/30 rounded-lg text-xs font-bold transition cursor-pointer"
                         >
                           Mark Leave
                         </button>
                         <button
                           onClick={() => handleDeactivate(doctor.id, doctor.is_active)}
-                          className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-bold border border-slate-700 transition"
+                          className="px-3 py-1.5 bg-slate-800 hover:bg-slate-750 text-slate-350 rounded-lg text-xs font-bold border border-slate-700 transition cursor-pointer"
                         >
                           {doctor.is_active ? 'Deactivate' : 'Activate'}
                         </button>

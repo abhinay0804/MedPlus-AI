@@ -12,6 +12,7 @@ export const LeaveManager: React.FC = () => {
   const [leaves, setLeaves] = useState<DoctorLeave[]>([])
   const [requests, setRequests] = useState<any[]>([])
   const [leaveRequests, setLeaveRequests] = useState<any[]>([])
+  const [leaveStatusFilter, setLeaveStatusFilter] = useState<'ALL' | 'PENDING' | 'APPROVED' | 'REJECTED'>('ALL')
   const [isLoading, setIsLoading] = useState(false)
   const [showAddModal, setShowAddModal] = useState(false)
   const [leaveDate, setLeaveDate] = useState('')
@@ -285,135 +286,153 @@ export const LeaveManager: React.FC = () => {
         )}
 
         {/* Doctor Leave Requests Tab */}
-        {activeSubTab === 'leaveRequests' && (
-          <div className="space-y-4">
-            {leaveRequests.length === 0 ? (
-              <div className="bg-white dark:bg-slate-900 rounded-xl p-8 text-center text-slate-400 border border-slate-200 dark:border-slate-800">
-                No doctor leave requests recorded.
+        {activeSubTab === 'leaveRequests' && (() => {
+          const filtered = leaveRequests.filter(r => leaveStatusFilter === 'ALL' || r.status === leaveStatusFilter);
+          return (
+            <div className="space-y-4">
+              {/* Status Filter Dropdown */}
+              <div className="bg-white dark:bg-slate-900 rounded-xl p-4 shadow-sm border border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                <span className="text-sm font-semibold text-slate-700 dark:text-slate-350">Filter Requests by Status:</span>
+                <select
+                  value={leaveStatusFilter}
+                  onChange={(e) => setLeaveStatusFilter(e.target.value as any)}
+                  className="bg-slate-55 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-900 dark:text-white p-2.5 focus:outline-none focus:ring-2 focus:ring-teal-500 min-w-[180px]"
+                >
+                  <option value="ALL">All Requests</option>
+                  <option value="PENDING">Pending Approval</option>
+                  <option value="APPROVED">Approved</option>
+                  <option value="REJECTED">Rejected</option>
+                </select>
               </div>
-            ) : (
-              <div className="grid grid-cols-1 gap-6">
-                {leaveRequests.map((req) => (
-                  <div key={req.id} className="bg-white dark:bg-slate-900 rounded-xl p-6 shadow-sm border border-slate-200 dark:border-slate-800 space-y-4">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 dark:border-slate-800 pb-3">
-                      <div>
-                        <h3 className="font-bold text-slate-900 dark:text-white">Dr. {req.doctor_name}</h3>
-                        <p className="text-xs text-slate-500">{req.doctor_specialisation} Specialist</p>
-                      </div>
-                      
-                      <div className="flex items-center space-x-2">
-                        {req.status === 'PENDING' ? (
-                          <>
-                            <button
-                              onClick={() => handleResolveLeaveRequest(req.id, 'APPROVED')}
-                              className="px-3.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400 rounded-lg text-xs font-bold transition flex items-center space-x-1 cursor-pointer"
-                            >
-                              <Check className="w-3.5 h-3.5" />
-                              <span>Approve Leave</span>
-                            </button>
-                            <button
-                              onClick={() => handleResolveLeaveRequest(req.id, 'REJECTED')}
-                              className="px-3.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 dark:bg-rose-500/10 dark:text-rose-400 rounded-lg text-xs font-bold transition flex items-center space-x-1 cursor-pointer"
-                            >
-                              <X className="w-3.5 h-3.5" />
-                              <span>Decline</span>
-                            </button>
-                          </>
-                        ) : (
-                          <span className={`px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${
-                            req.status === 'APPROVED'
-                              ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400'
-                              : 'bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-400'
-                          }`}>
-                            {req.status}
-                          </span>
-                        )}
-                      </div>
-                    </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-sm">
-                      <div className="bg-slate-50/50 dark:bg-slate-950/20 p-4 rounded-xl border border-slate-100 dark:border-slate-800/40">
-                        <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Requested Leave Date</label>
-                        <p className="font-semibold text-slate-800 dark:text-slate-200 flex items-center space-x-1">
-                          <Calendar className="w-4 h-4 text-slate-400" />
-                          <span>{req.leave_date}</span>
-                        </p>
-                      </div>
-
-                      <div className="bg-slate-50/50 dark:bg-slate-950/20 p-4 rounded-xl border border-slate-100 dark:border-slate-800/40">
-                        <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Reason for Leave</label>
-                        <p className="font-semibold text-slate-800 dark:text-slate-200">{req.reason || 'Not provided'}</p>
-                      </div>
-
-                      <div className="bg-slate-50/50 dark:bg-slate-950/20 p-4 rounded-xl border border-slate-100 dark:border-slate-800/40 flex items-center justify-between">
+              {filtered.length === 0 ? (
+                <div className="bg-white dark:bg-slate-900 rounded-xl p-8 text-center text-slate-400 border border-slate-200 dark:border-slate-800">
+                  No doctor leave requests found matching status: {leaveStatusFilter === 'ALL' ? 'Any' : leaveStatusFilter}.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 gap-6">
+                  {filtered.map((req) => (
+                    <div key={req.id} className="bg-white dark:bg-slate-900 rounded-xl p-6 shadow-sm border border-slate-200 dark:border-slate-800 space-y-4">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 dark:border-slate-800 pb-3">
                         <div>
-                          <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Monthly Leave Balance Tracker</label>
+                          <h3 className="font-bold text-slate-900 dark:text-white">Dr. {req.doctor_name}</h3>
+                          <p className="text-xs text-slate-500">{req.doctor_specialisation} Specialist</p>
+                        </div>
+                        
+                        <div className="flex items-center space-x-2">
+                          {req.status === 'PENDING' ? (
+                            <>
+                              <button
+                                onClick={() => handleResolveLeaveRequest(req.id, 'APPROVED')}
+                                className="px-3.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400 rounded-lg text-xs font-bold transition flex items-center space-x-1 cursor-pointer"
+                              >
+                                <Check className="w-3.5 h-3.5" />
+                                <span>Approve Leave</span>
+                              </button>
+                              <button
+                                onClick={() => handleResolveLeaveRequest(req.id, 'REJECTED')}
+                                className="px-3.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 dark:bg-rose-500/10 dark:text-rose-400 rounded-lg text-xs font-bold transition flex items-center space-x-1 cursor-pointer"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                                <span>Decline</span>
+                              </button>
+                            </>
+                          ) : (
+                            <span className={`px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${
+                              req.status === 'APPROVED'
+                                ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400'
+                                : 'bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-400'
+                            }`}>
+                              {req.status}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-sm">
+                        <div className="bg-slate-50/50 dark:bg-slate-950/20 p-4 rounded-xl border border-slate-100 dark:border-slate-800/40">
+                          <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Requested Leave Date</label>
                           <p className="font-semibold text-slate-800 dark:text-slate-200 flex items-center space-x-1">
-                            <Clock className="w-4 h-4 text-slate-400" />
-                            <span>{req.leaves_taken_this_month} Leave(s) Taken in August</span>
+                            <Calendar className="w-4 h-4 text-slate-400" />
+                            <span>{req.leave_date}</span>
+                          </p>
+                        </div>
+
+                        <div className="bg-slate-50/50 dark:bg-slate-950/20 p-4 rounded-xl border border-slate-100 dark:border-slate-800/40">
+                          <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Reason for Leave</label>
+                          <p className="font-semibold text-slate-800 dark:text-slate-200">{req.reason || 'Not provided'}</p>
+                        </div>
+
+                        <div className="bg-slate-50/50 dark:bg-slate-950/20 p-4 rounded-xl border border-slate-100 dark:border-slate-800/40 flex items-center justify-between">
+                          <div>
+                            <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Monthly Leave Balance Tracker</label>
+                            <p className="font-semibold text-slate-800 dark:text-slate-200 flex items-center space-x-1">
+                              <Clock className="w-4 h-4 text-slate-400" />
+                              <span>{req.leaves_taken_this_month} Leave(s) Taken in August</span>
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Conflict Assessment & AI recommendation */}
+                      <div className="bg-slate-50/30 dark:bg-slate-950/10 p-4 rounded-xl border border-slate-200/50 dark:border-slate-800/50 space-y-3">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                          <div className="flex items-center space-x-4">
+                            <div>
+                              <span className="text-[10px] font-bold uppercase text-slate-400 block mb-1">Confirmed Bookings</span>
+                              <span className={`px-2 py-0.5 rounded text-xs font-bold ${req.confirmed_appointments > 0 ? 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'}`}>
+                                {req.confirmed_appointments} affected
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-[10px] font-bold uppercase text-slate-400 block mb-1">Pending Approval</span>
+                              <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-650 dark:bg-slate-800 dark:text-slate-350 text-xs font-semibold">
+                                {req.pending_appointments} pending
+                              </span>
+                            </div>
+                          </div>
+
+                          {req.confirmed_appointments + req.pending_appointments > 0 && (
+                            <div className="flex items-center space-x-2 text-xs">
+                              <span className="text-slate-450 font-medium">Urgency:</span>
+                              <span className="px-1.5 py-0.5 rounded bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-400 font-bold">{req.high_urgency_count} High</span>
+                              <span className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-755 dark:bg-amber-500/10 dark:text-amber-400 font-bold">{req.medium_urgency_count} Mid</span>
+                              <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-400 font-bold">{req.low_urgency_count} Low</span>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Gemini Suggestion Badge & reason */}
+                        <div className="border-t border-slate-150 dark:border-slate-800/80 pt-3 flex items-start space-x-3">
+                          <div className="flex-shrink-0 mt-0.5">
+                            <span className={`px-2.5 py-1 rounded text-[10px] font-black tracking-wider uppercase ${
+                              req.ai_suggestion === 'APPROVE' 
+                                ? 'bg-emerald-100 text-emerald-855 dark:bg-emerald-500/20 dark:text-emerald-400'
+                                : req.ai_suggestion === 'REJECT'
+                                ? 'bg-rose-100 text-rose-855 dark:bg-rose-500/20 dark:text-rose-400'
+                                : 'bg-amber-100 text-amber-855 dark:bg-amber-500/20 dark:text-amber-400'
+                            }`}>
+                              AI Suggestion: {req.ai_suggestion}
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-600 dark:text-slate-400 italic">
+                            "{req.ai_reason}"
                           </p>
                         </div>
                       </div>
-                    </div>
 
-                    {/* Conflict Assessment & AI recommendation */}
-                    <div className="bg-slate-50/30 dark:bg-slate-950/10 p-4 rounded-xl border border-slate-200/50 dark:border-slate-800/50 space-y-3">
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                        <div className="flex items-center space-x-4">
-                          <div>
-                            <span className="text-[10px] font-bold uppercase text-slate-400 block mb-1">Confirmed Bookings</span>
-                            <span className={`px-2 py-0.5 rounded text-xs font-bold ${req.confirmed_appointments > 0 ? 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'}`}>
-                              {req.confirmed_appointments} affected
-                            </span>
-                          </div>
-                          <div>
-                            <span className="text-[10px] font-bold uppercase text-slate-400 block mb-1">Pending Approval</span>
-                            <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-650 dark:bg-slate-800 dark:text-slate-350 text-xs font-semibold">
-                              {req.pending_appointments} pending
-                            </span>
-                          </div>
+                      {req.admin_reason && (
+                        <div className="bg-rose-50/50 dark:bg-rose-950/15 border-l-4 border-rose-500 p-3 rounded-r-lg text-xs text-rose-700 dark:text-rose-300">
+                          <strong>Admin Feedback:</strong> {req.admin_reason}
                         </div>
-
-                        {req.confirmed_appointments + req.pending_appointments > 0 && (
-                          <div className="flex items-center space-x-2 text-xs">
-                            <span className="text-slate-450 font-medium">Urgency:</span>
-                            <span className="px-1.5 py-0.5 rounded bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-400 font-bold">{req.high_urgency_count} High</span>
-                            <span className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-750 dark:bg-amber-500/10 dark:text-amber-400 font-bold">{req.medium_urgency_count} Mid</span>
-                            <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-400 font-bold">{req.low_urgency_count} Low</span>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Gemini Suggestion Badge & reason */}
-                      <div className="border-t border-slate-150 dark:border-slate-800/80 pt-3 flex items-start space-x-3">
-                        <div className="flex-shrink-0 mt-0.5">
-                          <span className={`px-2.5 py-1 rounded text-[10px] font-black tracking-wider uppercase ${
-                            req.ai_suggestion === 'APPROVE' 
-                              ? 'bg-emerald-100 text-emerald-850 dark:bg-emerald-500/20 dark:text-emerald-400'
-                              : req.ai_suggestion === 'REJECT'
-                              ? 'bg-rose-100 text-rose-850 dark:bg-rose-500/20 dark:text-rose-400'
-                              : 'bg-amber-100 text-amber-855 dark:bg-amber-500/20 dark:text-amber-400'
-                          }`}>
-                            AI Suggestion: {req.ai_suggestion}
-                          </span>
-                        </div>
-                        <p className="text-xs text-slate-600 dark:text-slate-400 italic">
-                          "{req.ai_reason}"
-                        </p>
-                      </div>
+                      )}
                     </div>
-
-                    {req.admin_reason && (
-                      <div className="bg-rose-50/50 dark:bg-rose-950/15 border-l-4 border-rose-500 p-3 rounded-r-lg text-xs text-rose-700 dark:text-rose-300">
-                        <strong>Admin Feedback:</strong> {req.admin_reason}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {/* Schedule Change Requests Tab */}
         {activeSubTab === 'requests' && (

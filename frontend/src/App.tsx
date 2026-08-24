@@ -19,6 +19,7 @@ import { DoctorAnalytics } from './pages/doctor/Analytics'
 import { AdminDashboard } from './pages/admin/AdminDashboard'
 import { DoctorManagement } from './pages/admin/DoctorManagement'
 import { DoctorDetail } from './pages/admin/DoctorDetail'
+import { DoctorPerformance } from './pages/admin/DoctorPerformance'
 import { LeaveManager } from './pages/admin/LeaveManager'
 import { AuditLogPage } from './pages/admin/AuditLog'
 import { Appointments as AdminAppointments } from './pages/admin/Appointments'
@@ -144,6 +145,14 @@ export const App: React.FC = () => {
               element={
                 <RequireAuth allowedRoles={['ADMIN']}>
                   <DoctorDetail />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/admin/doctors/:id/performance"
+              element={
+                <RequireAuth allowedRoles={['ADMIN']}>
+                  <DoctorPerformance />
                 </RequireAuth>
               }
             />

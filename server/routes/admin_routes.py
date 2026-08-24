@@ -808,6 +808,20 @@ async def create_admin_note(
     )
     db.add(notif)
 
+    # Dispatch email notification to doctor
+    from microservices.tasks import send_email_task
+    from server.routes.patient_routes import safe_dispatch
+    if doctor.user and doctor.user.email:
+        safe_dispatch(
+            send_email_task,
+            to_email=doctor.user.email,
+            subject=f"New Administrative Directive ({data.priority})",
+            template_name="system_notice",
+            context={
+                "message": f"Hello Dr. {doctor.user.full_name},\n\nYou have received a new administrative note/directive from the clinic administration.\n\nPriority: {data.priority}\nSubject: {data.subject}\n\nContent:\n{data.body}\n\nPlease check your Doctor Portal dashboard under Directives to mark it as read.\n\nBest regards,\nMedPulse AI Administration"
+            }
+        )
+
     await db.commit()
     await db.refresh(note)
     return note
@@ -818,6 +832,226 @@ async def get_admin_notes(id: str, db: AsyncSession = Depends(get_db)):
     query = select(AdminNote).where(AdminNote.doctor_id == id).order_by(AdminNote.created_at.desc())
     notes = (await db.execute(query)).scalars().all()
     return notes
+
+
+@router.get("/doctors/{id}/performance", dependencies=[admin_guard])
+async def get_doctor_performance(
+    id: str,
+    period: str = "total",  # day, month, 3months, 6months, 1year, total
+    date_str: Optional[str] = None,  # date query like YYYY-MM-DD or YYYY-MM
+    db: AsyncSession = Depends(get_db)
+):
+    """Retrieve comprehensive time-filtered performance metrics for a doctor."""
+    from datetime import datetime, date, timedelta
+    from sqlalchemy import select, func
+    from sqlalchemy.orm import selectinload
+    from server.database.models import DoctorProfile, Appointment, AppointmentStatus, DoctorLeave, DoctorReview, User
+    
+    doc_repo = DoctorRepository(db)
+    doctor = await doc_repo.get_by_id(id)
+    if not doctor:
+        raise HTTPException(status_code=404, detail="Doctor profile not found")
+        
+    now = datetime.now() # Use local system time for query relative metrics
+    
+    # 1. Determine date filter range
+    start_dt = None
+    end_dt = None
+    
+    if period == "day":
+        if date_str:
+            try:
+                d = datetime.strptime(date_str, "%Y-%m-%d").date()
+            except ValueError:
+                d = now.date()
+        else:
+            d = now.date()
+        start_dt = datetime(d.year, d.month, d.day, 0, 0, 0)
+        end_dt = start_dt + timedelta(days=1)
+        
+    elif period == "month":
+        if date_str:
+            try:
+                # Expect YYYY-MM
+                parts = date_str.split("-")
+                year = int(parts[0])
+                month = int(parts[1])
+                d = date(year, month, 1)
+            except (ValueError, IndexError):
+                d = date(now.year, now.month, 1)
+        else:
+            d = date(now.year, now.month, 1)
+        start_dt = datetime(d.year, d.month, 1, 0, 0, 0)
+        if d.month == 12:
+            end_dt = datetime(d.year + 1, 1, 1, 0, 0, 0)
+        else:
+            end_dt = datetime(d.year, d.month + 1, 1, 0, 0, 0)
+            
+    elif period == "3months":
+        end_dt = now
+        start_dt = now - timedelta(days=90)
+        
+    elif period == "6months":
+        end_dt = now
+        start_dt = now - timedelta(days=180)
+        
+    elif period == "1year":
+        end_dt = now
+        start_dt = now - timedelta(days=365)
+        
+    else:  # total
+        end_dt = now
+        start_dt = datetime(2020, 1, 1, 0, 0, 0)
+        
+    # 2. Query Leaves taken in period
+    leave_query = select(DoctorLeave).where(DoctorLeave.doctor_id == id)
+    if period == "day":
+        leave_query = leave_query.where(DoctorLeave.leave_date == start_dt.date())
+    elif period == "month":
+        leave_query = leave_query.where(DoctorLeave.leave_date >= start_dt.date(), DoctorLeave.leave_date < end_dt.date())
+    elif period in ["3months", "6months", "1year"]:
+        leave_query = leave_query.where(DoctorLeave.leave_date >= start_dt.date(), DoctorLeave.leave_date <= end_dt.date())
+    # for total, no date bounds
+    
+    leaves_res = await db.execute(leave_query)
+    leaves_list = leaves_res.scalars().all()
+    leaves_count = len(leaves_list)
+    
+    # 3. Query Appointments in period
+    appt_query = select(Appointment).options(selectinload(Appointment.symptom_form)).where(Appointment.doctor_id == id)
+    if start_dt and end_dt:
+        appt_query = appt_query.where(Appointment.slot_start >= start_dt, Appointment.slot_start < end_dt)
+        
+    appt_res = await db.execute(appt_query)
+    appts = appt_res.scalars().all()
+    
+    cases_completed = 0
+    cases_cancelled = 0
+    cases_confirmed = 0
+    cases_high = 0
+    cases_medium = 0
+    cases_low = 0
+    total_working_minutes = 0
+    unique_working_days = set()
+    
+    for appt in appts:
+        if appt.status == AppointmentStatus.COMPLETED:
+            cases_completed += 1
+            duration = (appt.slot_end - appt.slot_start).total_seconds() / 60
+            total_working_minutes += duration
+            unique_working_days.add(appt.slot_start.date())
+            
+            # Check urgency
+            if appt.symptom_form and appt.symptom_form.urgency_level:
+                u_str = appt.symptom_form.urgency_level.name.upper()
+                if "HIGH" in u_str:
+                    cases_high += 1
+                elif "MEDIUM" in u_str or "MID" in u_str:
+                    cases_medium += 1
+                else:
+                    cases_low += 1
+            else:
+                cases_low += 1
+                
+        elif appt.status == AppointmentStatus.CANCELLED:
+            cases_cancelled += 1
+        elif appt.status == AppointmentStatus.CONFIRMED:
+            cases_confirmed += 1
+            
+    total_working_hours = round(total_working_minutes / 60.0, 1)
+    days_worked = len(unique_working_days)
+    avg_working_hours_per_day = round(total_working_hours / days_worked, 1) if days_worked > 0 else 0.0
+    
+    # 4. Query Reviews in period
+    review_query = select(DoctorReview).options(selectinload(DoctorReview.appointment)).where(DoctorReview.doctor_id == id)
+    if start_dt and end_dt:
+        review_query = review_query.where(DoctorReview.created_at >= start_dt, DoctorReview.created_at < end_dt)
+        
+    reviews_res = await db.execute(review_query)
+    reviews_list = reviews_res.scalars().all()
+    
+    ratings = [r.rating for r in reviews_list if r.rating is not None]
+    rating_avg = round(sum(ratings) / len(ratings), 1) if ratings else 0.0
+    rating_count = len(ratings)
+    
+    # Retrieve details for reviews
+    reviews_out = []
+    for r in reviews_list:
+        patient_stmt = select(User).where(User.id == r.patient_id)
+        p_res = await db.execute(patient_stmt)
+        p = p_res.scalar_one_or_none()
+        patient_name = p.full_name if p else "Anonymous"
+        reviews_out.append({
+            "id": r.id,
+            "rating": r.rating,
+            "comment": r.comment,
+            "patient_name": patient_name,
+            "created_at": r.created_at.strftime("%Y-%m-%d %I:%M %p")
+        })
+        
+    # 5. Generate AI analysis of reviews and statistics
+    gemini_analysis = {
+        "summary": "This doctor has solid performance across the clinic.",
+        "strengths": ["Strong clinical presence", "Good patient compliance"],
+        "areas_for_improvement": ["Review and reduce appointment cancellations"],
+        "suggestions": "Ensure slot availability aligns with leaves to prevent manual rescheduling overhead."
+    }
+    
+    comments = [r.comment for r in reviews_list if r.comment]
+    comments_summary = " | ".join(comments) if comments else "No text reviews available."
+    
+    import os
+    if os.getenv("GOOGLE_GENAI_API_KEY"):
+        try:
+            from server.services.llm_service import call_gemini_json
+            prompt = f"""
+            You are an expert clinical practice administrator. Analyze the performance statistics and patient feedback comments for Dr. {doctor.user.full_name} ({doctor.specialisation}) over the period '{period}':
+            
+            Clinic Metrics:
+            - Completed Cases: {cases_completed}
+            - Cancelled Cases: {cases_cancelled}
+            - High Urgency Cases Managed: {cases_high}
+            - Medium Urgency Cases Managed: {cases_medium}
+            - Low Urgency Cases Managed: {cases_low}
+            - Total Consultation Hours: {total_working_hours} hrs
+            - Average Work Hours/Day: {avg_working_hours_per_day} hrs
+            - Average Patient Rating: {rating_avg}/5
+            - Total Patient Reviews: {rating_count}
+            
+            Patient Review Comments:
+            "{comments_summary}"
+            
+            Generate a performance appraisal in JSON format. Do not include markdown wraps or block ticks.
+            Return a JSON object matching this schema:
+            {{
+              "summary": "Concise summary of their clinical and scheduling performance (max 3 sentences)",
+              "strengths": ["List 2-3 specific clinical/interpersonal strengths based on data or comments"],
+              "areas_for_improvement": ["List 1-2 constructive areas for improvement (e.g. promptness, communication, scheduling)"],
+              "suggestions": "Actionable, concrete suggestions for the doctor to improve their practice."
+            }}
+            """
+            analysis_json = await call_gemini_json(prompt)
+            if isinstance(analysis_json, dict):
+                gemini_analysis = analysis_json
+        except Exception:
+            pass
+            
+    return {
+        "leaves_taken": leaves_count,
+        "leaves_list": [{"id": l.id, "leave_date": str(l.leave_date), "reason": l.reason} for l in leaves_list],
+        "cases_completed": cases_completed,
+        "cases_cancelled": cases_cancelled,
+        "cases_confirmed": cases_confirmed,
+        "cases_high": cases_high,
+        "cases_medium": cases_medium,
+        "cases_low": cases_low,
+        "total_working_hours": total_working_hours,
+        "avg_working_hours_per_day": avg_working_hours_per_day,
+        "rating_avg": rating_avg,
+        "rating_count": rating_count,
+        "reviews": reviews_out,
+        "gemini_analysis": gemini_analysis
+    }
 
 # --- Admin Patient Directory ---
 

@@ -428,7 +428,7 @@ def send_medication_reminders_task():
         from sqlalchemy.orm import selectinload
         from server.database.models import MedicationReminder
 
-        now = datetime.utcnow()
+        now = datetime.now()
         today = now.date()
         current_time_str = now.strftime("%H:%M")
 

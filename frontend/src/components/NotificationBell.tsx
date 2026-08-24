@@ -66,6 +66,7 @@ export const NotificationBell: React.FC = () => {
       await api.put('/auth/notifications/read-all', {})
       toast.success('All notifications marked as read!')
       fetchNotifications()
+      setIsOpen(false)
     } catch (err: any) {
       toast.error(err.message || 'Failed to clear notifications')
     }

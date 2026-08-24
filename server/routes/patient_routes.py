@@ -750,10 +750,11 @@ def generate_prescription_pdf(appt) -> bytes:
     sign_data = [
         [
             Paragraph("<b>MedPulse Verification</b><br/>OTP Check: Verified<br/>Status: Completed", body_style),
+            Paragraph("<b>Verified by</b><br/>Person Name: _________________<br/>Person Signature: ______________<br/>Stamp:", body_style),
             Paragraph("<b>Signature</b><br/><br/>_______________________<br/>Consulting Physician", body_style)
         ]
     ]
-    sign_table = Table(sign_data, colWidths=[260, 260])
+    sign_table = Table(sign_data, colWidths=[170, 180, 170])
     sign_table.setStyle(TableStyle([
         ('VALIGN', (0,0), (-1,-1), 'TOP'),
         ('TOPPADDING', (0,0), (-1,-1), 15),
@@ -762,7 +763,20 @@ def generate_prescription_pdf(appt) -> bytes:
     story.append(Spacer(1, 20))
     story.append(KeepTogether([sign_table]))
     
-    def add_footer(canvas, doc):
+    def add_watermark_and_footer(canvas, doc):
+        # Draw background watermark
+        canvas.saveState()
+        canvas.setFont('Helvetica-Bold', 60)
+        canvas.setFillColor(colors.HexColor("#cbd5e1"))
+        canvas.setFillAlpha(0.06)  # Subtle transparent watermark
+        
+        # Center coordinates for Letter size page: (306, 396)
+        canvas.translate(306, 396)
+        canvas.rotate(45)  # Rotate diagonal y=x line
+        canvas.drawCentredString(0, 0, "MEDPLUS AI")
+        canvas.restoreState()
+
+        # Draw footer
         canvas.saveState()
         canvas.setFont('Helvetica', 8)
         canvas.setFillColor(colors.HexColor("#94a3b8"))
@@ -770,7 +784,7 @@ def generate_prescription_pdf(appt) -> bytes:
         canvas.drawRightString(doc.pagesize[0] - 40, 20, "Page 1 of 1")
         canvas.restoreState()
         
-    doc.build(story, onFirstPage=add_footer)
+    doc.build(story, onFirstPage=add_watermark_and_footer)
     pdf_bytes = buffer.getvalue()
     buffer.close()
     return pdf_bytes
