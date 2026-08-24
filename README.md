@@ -40,16 +40,17 @@
 - **5-Minute Slot Hold TTL**: Patients get a temporary lock while completing intake forms — expired holds are auto-released by a Celery Beat sweeper every 60 seconds.
 - **Patient Overlap Guard**: Blocks patients from confirming overlapping appointments across different doctors.
 
-### 🤖 Google Gemini AI Integration (7 AI Pipelines)
-| Pipeline | Trigger | Output |
-|---|---|---|
-| **Pre-Visit Symptom Triage** | Patient submits symptoms | Urgency level (`LOW`/`MEDIUM`/`HIGH`), chief complaint, key symptoms, red flags, suggested questions |
-| **Specialty Recommendation** | Before booking | Recommends 1 of 6 specialties + extracts intake parameters (duration, severity, triggers) |
-| **Post-Visit Note Summarization** | Doctor submits notes | Patient-friendly summary + structured medication schedule with daily reminder times |
-| **Cross-Specialty Clinical Briefing** | Doctor opens consultation | Specialty history (Category A), systemic medical context (Category B), diagnostic suggestions (Category C) |
-| **Cancellation Reason Analysis** | Doctor cancels appointment | Categorizes reason as `EMERGENCY` (0x), `CONVENIENCE` (1.5x), or `UNJUSTIFIED` (2.0x) demerit multiplier |
-| **Leave Approval Recommendation** | Admin reviews leave request | AI recommendation (`APPROVE`/`REJECT`/`CAUTION`) with operational reasoning |
-| **Hospital Operations Insights** | Admin requests analytics | Chief Medical Officer briefing: staffing bottlenecks, peak hours, capacity utilization |
+### 🤖 Google Gemini AI Integration (8 AI Pipelines)
+| Pipeline | Trigger | Output | Target End |
+|---|---|---|---|
+| **Pre-Visit Symptom Triage** | Patient submits symptoms | Urgency level (`LOW`/`MEDIUM`/`HIGH`), chief complaint, key symptoms, red flags, suggested questions | Patient & Doctor |
+| **Specialty Recommendation** | Before booking | Recommends 1 of 6 specialties + extracts intake parameters (duration, severity, triggers) | Patient |
+| **Post-Visit Note Summarization** | Doctor submits notes | Patient-friendly summary + structured medication schedule with daily reminder times | Patient & Doctor |
+| **Cross-Specialty Clinical Briefing** | Doctor opens consultation | Specialty history (Category A), systemic medical context (Category B), diagnostic suggestions (Category C) | Doctor |
+| **Cancellation Reason Analysis** | Doctor cancels appointment | Categorizes reason as `EMERGENCY` (0x), `CONVENIENCE` (1.5x), or `UNJUSTIFIED` (2.0x) demerit multiplier | Admin & Doctor |
+| **Leave Approval Recommendation** | Admin reviews leave request | AI recommendation (`APPROVE`/`REJECT`/`CAUTION`) with operational reasoning | Admin |
+| **Hospital Operations Insights** | Admin requests analytics | Chief Medical Officer briefing: staffing bottlenecks, peak hours, capacity utilization | Admin |
+| **Doctor Performance Analysis** | Admin views doctor profile | Appraisal summary, strengths list, improvement areas, and actionable practice suggestions | Admin |
 
 - **Model Fallback Cascade**: `gemini-3.6-flash` → `gemini-3.5-flash` → `gemini-3.5-flash-lite` with 3 exponential retries.
 - **Zero-Downtime Offline Fallbacks**: Local NLP rule engines execute in <1ms when API keys are exhausted.
@@ -548,9 +549,38 @@ System: Categorize this doctor's cancellation reason as:
 
 ### 5. Leave Approval Recommendation
 ```text
-System: You are a hospital operations advisor. Given workload metrics (confirmed
-appointments, high-urgency cases, monthly leaves taken), recommend APPROVE, REJECT,
-or CAUTION with operational reasoning.
+System: You are a hospital operations advisor. Given workload metrics (confirmed appointments, high-urgency cases, monthly leaves taken), recommend APPROVE, REJECT, or CAUTION with operational reasoning.
+
+Output Schema:
+{
+  "suggestion": "APPROVE" | "REJECT" | "CAUTION",
+  "reason": "Clear explanation of how the approval/rejection affects departmental capacity, high urgency queues, and current staffing levels."
+}
+```
+
+### 6. Hospital Operations Insights (CMO Insights)
+```text
+System: You are an expert Chief Medical Officer and hospital operations analyst. Analyze real-time hospital metrics (total registered patients/doctors, appointment breakdowns, departmental distributions, urgency distribution) and generate strategic operational insights.
+
+Output Schema:
+{
+  "insights_html": "Beautifully formatted HTML snippet containing Executive Operational Summary, Resource & Staffing Bottlenecks, Clinical Urgency Review, and Actionable Recommendations using standard CSS classes.",
+  "peak_hours_prediction": "Morning (9 AM - 12 PM)" | "Afternoon (1 PM - 4 PM)",
+  "department_alert": "Name of the department needing immediate attention (e.g. Cardiology) or None"
+}
+```
+
+### 7. Doctor Performance Appraisal Analysis
+```text
+System: You are an expert clinical practice administrator. Analyze the performance statistics (completed cases, cancellations, rating, work hours) and patient feedback comments for a specific specialist over a period.
+
+Output Schema:
+{
+  "summary": "Concise summary of their clinical and scheduling performance (max 3 sentences)",
+  "strengths": ["List 2-3 specific clinical/interpersonal strengths based on data or comments"],
+  "areas_for_improvement": ["List 1-2 constructive areas for improvement (e.g. promptness, communication, scheduling)"],
+  "suggestions": "Actionable, concrete suggestions for the doctor to improve their practice."
+}
 ```
 
 ---
