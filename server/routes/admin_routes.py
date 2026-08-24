@@ -804,7 +804,7 @@ async def create_admin_note(
         title=f"New Directive from Administration ({data.priority})",
         body=f"Subject: {data.subject}",
         type="admin_note",
-        link="/doctor/dashboard"
+        link="/doctor/dashboard?open_directives=true"
     )
     db.add(notif)
 

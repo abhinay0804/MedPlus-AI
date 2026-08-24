@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Layout } from '../../components/Layout'
 import { api } from '../../lib/api'
 import { Appointment, UrgencyLevel } from '../../types'
@@ -41,6 +42,7 @@ interface AdminNote {
 }
 
 export const DoctorDashboard: React.FC = () => {
+  const [searchParams] = useSearchParams()
   const [appointments, setAppointments] = useState<Appointment[]>([])
   const [selectedAppt, setSelectedAppt] = useState<Appointment | null>(null)
   const [notesText, setNotesText] = useState('')
@@ -150,7 +152,10 @@ export const DoctorDashboard: React.FC = () => {
     fetchSchedule()
     fetchRatingStats()
     fetchNotes()
-  }, [])
+    if (searchParams.get('open_directives') === 'true') {
+      setShowNotesInbox(true)
+    }
+  }, [searchParams])
 
   useEffect(() => {
     if (selectedAppt) {
@@ -353,13 +358,21 @@ export const DoctorDashboard: React.FC = () => {
               Access AI pre-visit triage summaries, manage booking requests, conduct consultations, and submit notes.
             </p>
           </div>
-          {adminNotes.some(n => !n.is_read) && (
+          {adminNotes.length > 0 && (
             <button
               onClick={() => setShowNotesInbox(true)}
-              className="flex items-center space-x-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-750 text-white rounded-lg text-xs font-bold transition shadow animate-pulse cursor-pointer"
+              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow cursor-pointer ${
+                adminNotes.some(n => !n.is_read)
+                  ? 'bg-red-600 hover:bg-red-750 text-white animate-pulse'
+                  : 'bg-slate-150 hover:bg-slate-200 text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-750 dark:text-slate-200 border border-slate-200 dark:border-slate-700'
+              }`}
             >
               <Mail className="w-3.5 h-3.5" />
-              <span>Directives ({adminNotes.filter(n => !n.is_read).length})</span>
+              <span>
+                {adminNotes.some(n => !n.is_read)
+                  ? `Directives (${adminNotes.filter(n => !n.is_read).length})`
+                  : 'Directives History'}
+              </span>
             </button>
           )}
         </div>
