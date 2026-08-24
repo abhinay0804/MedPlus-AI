@@ -13,7 +13,7 @@ The platform syncs confirmed medical appointments directly into Google Calendar 
 5. Click **Create Credentials > OAuth client ID**.
 6. Set Application type to **Web application**.
 7. Add Authorized redirect URI:
-   `http://localhost:8000/api/auth/google/callback`
+   `http://localhost:8001/api/auth/google/callback`
 8. Copy the generated Client ID and Client Secret.
 
 ---
@@ -24,7 +24,7 @@ Add the credentials to your `.env` file:
 ```env
 GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
 GOOGLE_CLIENT_SECRET=your-client-secret
-GOOGLE_REDIRECT_URI=http://localhost:8000/api/auth/google/callback
+GOOGLE_REDIRECT_URI=http://localhost:8001/api/auth/google/callback
 ```
 
 ---

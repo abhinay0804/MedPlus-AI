@@ -9,28 +9,9 @@
 
 ### `POST /api/auth/register`
 Registers a new user account.
-- **Request Body:**
-  ```json
-  {
-    "email": "patient@example.com",
-    "password": "SecurePassword123!",
-    "full_name": "John Doe",
-    "phone": "+15551234567",
-    "role": "PATIENT"
-  }
-  ```
-- **Response (201 Created):** `UserResponse`
 
 ### `POST /api/auth/login`
 Authenticates a user and returns access and refresh JWT tokens.
-- **Request Body:**
-  ```json
-  {
-    "email": "patient@example.com",
-    "password": "SecurePassword123!"
-  }
-  ```
-- **Response (200 OK):** `TokenResponse` (`access_token`, `refresh_token`, `token_type`, `user`)
 
 ### `POST /api/auth/refresh`
 Rotates access token using a valid refresh token.
@@ -38,37 +19,45 @@ Rotates access token using a valid refresh token.
 ### `GET /api/auth/me`
 Returns current authenticated user details.
 
+### `POST /api/auth/otp/send`
+Sends an Email OTP for verification.
+
+### `POST /api/auth/otp/verify`
+Verifies an Email OTP.
+
+### `GET /api/auth/google/connect`
+Initiates Google Calendar OAuth connection.
+
+### `GET /api/auth/google/callback`
+Google connect callback to save OAuth tokens and finalize calendar sync.
+
 ---
 
 ## 2. Patient Endpoints (`/api/patient`)
 
 ### `GET /api/patient/doctors`
 Search doctors by specialisation.
-- **Query Params:** `specialisation` (optional)
 
 ### `GET /api/patient/doctors/{id}/slots`
-Get available consultation time slots for a specific date.
-- **Query Params:** `date` (YYYY-MM-DD)
+Slot calculation: Get available consultation time slots for a specific date.
 
 ### `POST /api/patient/appointments`
 Hold a 5-minute temporary slot.
-- **Request Body:**
-  ```json
-  {
-    "doctor_id": "uuid",
-    "slot_start": "2026-08-25T10:00:00Z",
-    "slot_end": "2026-08-25T10:30:00Z"
-  }
-  ```
 
 ### `POST /api/patient/appointments/{id}/symptoms`
-Submit pre-visit symptoms for an held appointment.
+Symptom triage: Submit pre-visit symptoms for a held appointment to generate AI triage.
 
 ### `POST /api/patient/appointments/{id}/confirm`
 Confirm appointment booking.
 
 ### `PUT /api/patient/appointments/{id}/reschedule`
 Reschedule an existing appointment to a new slot.
+
+### `POST /api/patient/reviews`
+Review submits: Submit a review and rating for a completed doctor appointment.
+
+### `GET /api/patient/appointments/{id}/pdf`
+PDF download: Download a PDF summary of the appointment, including notes and prescription.
 
 ---
 
@@ -77,8 +66,20 @@ Reschedule an existing appointment to a new slot.
 ### `GET /api/doctor/appointments`
 List doctor's scheduled appointments for a given date.
 
+### `GET /api/doctor/analytics/heatmap`
+Analytics heatmaps: Get appointment density and patient demographic heatmap data.
+
+### `POST /api/doctor/appointments/{id}/checkin`
+OTP verification check-in: Verify patient OTP to securely check-in the patient.
+
 ### `POST /api/doctor/appointments/{id}/notes`
-Save clinical notes and prescription text.
+Notes submit: Save clinical notes and prescription text.
+
+### `GET /api/doctor/directives`
+Directives inbox: Fetch administrative directives or tasks assigned to the doctor.
+
+### `GET /api/doctor/appointments/{id}/briefing`
+AI patient briefing: Get an AI-generated briefing of the patient's clinical history before the visit.
 
 ### `PUT /api/doctor/appointments/{id}/complete`
 Mark appointment status as `COMPLETED`. Triggers post-visit AI summary generation.
@@ -87,11 +88,23 @@ Mark appointment status as `COMPLETED`. Triggers post-visit AI summary generatio
 
 ## 4. Admin Endpoints (`/api/admin`)
 
+### `GET /api/admin/dashboard`
+Returns platform aggregate statistics and appointment distribution counts.
+
+### `GET /api/admin/cmo/insights`
+CMO AI insights: AI-generated reports on hospital operations and efficiency.
+
 ### `POST /api/admin/doctors`
 Create a new doctor profile and user account.
 
-### `POST /api/admin/doctors/{id}/leave`
-Mark doctor on leave for a specific date.
+### `PUT /api/admin/doctors/{id}/reactivate`
+Doctor reactivation: Manually reactivate a suspended doctor's profile and reset demerits.
 
-### `GET /api/admin/dashboard`
-Returns platform aggregate statistics and appointment distribution counts.
+### `GET /api/admin/doctors/{id}/analytics`
+Doctor performance analytics: Fetch metrics, cancellation rates, and demerits.
+
+### `POST /api/admin/doctors/{id}/leave`
+Leave approvals: Approve and mark a doctor on leave for specific dates, triggering automatic rescheduling for affected appointments.
+
+### `PUT /api/admin/appointments/{id}/reassign`
+Slot reassignments: Manually reassign a patient's appointment to a different doctor or time slot.
