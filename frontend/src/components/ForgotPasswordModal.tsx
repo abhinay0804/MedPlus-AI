@@ -23,6 +23,20 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({ isOpen
   const [isResending, setIsResending] = useState(false)
 
   useEffect(() => {
+    if (isOpen) {
+      setStep(1)
+      setEmail('')
+      setOtpCode('')
+      setNewPassword('')
+      setShowPassword(false)
+      setError(null)
+      setSuccessMsg(null)
+      setIsSubmitting(false)
+      setIsResending(false)
+    }
+  }, [isOpen])
+
+  useEffect(() => {
     if (resendTimer > 0) {
       const t = setTimeout(() => setResendTimer(resendTimer - 1), 1000)
       return () => clearTimeout(t)
