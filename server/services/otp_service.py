@@ -14,6 +14,30 @@ def safe_dispatch(task_func, *args, **kwargs):
     """Safely dispatch Celery task without raising 500 or blocking if Redis/Celery is offline."""
     import logging
     logger = logging.getLogger(__name__)
+    task_name = getattr(task_func, "__name__", "")
+    
+    # INTERCEPT EMAIL TASKS: Run instantly and synchronously inside an asyncio task on the active loop!
+    # This bypasses any Celery Redis queuing delay (which can take 10-15 minutes on Render free tier).
+    if task_name == "send_email_task":
+        try:
+            to_email = kwargs.get("to_email") or (args[0] if len(args) > 0 else None)
+            subject = kwargs.get("subject") or (args[1] if len(args) > 1 else None)
+            template_name = kwargs.get("template_name") or (args[2] if len(args) > 2 else None)
+            context = kwargs.get("context") or (args[3] if len(args) > 3 else None)
+            
+            if to_email and subject and template_name:
+                from server.services.email_service import send_email
+                import asyncio
+                try:
+                    loop = asyncio.get_running_loop()
+                    loop.create_task(send_email(to_email, subject, template_name, context or {}))
+                    logger.info(f"[Instant Email] Enqueued {to_email} directly in asyncio event loop (<1ms)")
+                    return
+                except RuntimeError:
+                    logger.warning("[Instant Email] No running event loop found, falling back to celery/sync")
+        except Exception as e:
+            logger.error(f"[Instant Email] Failed to intercept send_email_task: {e}")
+
     try:
         task_func.apply_async(args=args, kwargs=kwargs, retry=False)
     except Exception as e:
