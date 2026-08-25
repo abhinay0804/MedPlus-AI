@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "MedPulse AI — Smart Healthcare Portal"
     VERSION: str = "1.0.0"
     ENVIRONMENT: str = "development"
-    BACKEND_PORT: int = 8000
+    BACKEND_PORT: int = 8001
     FRONTEND_URL: str = "http://localhost:5173"
     
     # Database
@@ -35,7 +35,7 @@ class Settings(BaseSettings):
     # Google Calendar OAuth 2.0
     GOOGLE_CLIENT_ID: Optional[str] = None
     GOOGLE_CLIENT_SECRET: Optional[str] = None
-    GOOGLE_REDIRECT_URI: str = "http://localhost:8000/api/auth/google/callback"
+    GOOGLE_REDIRECT_URI: str = "http://localhost:8001/api/auth/google/callback"
     
     # Redis & Celery
     REDIS_URL: str = "redis://localhost:6379/0"

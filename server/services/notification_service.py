@@ -13,6 +13,7 @@ from typing import List, Optional, Any
 from datetime import datetime
 
 from server.services.email_service import send_email
+from server.config import settings
 from server.services.calendar_service import (
     create_calendar_event,
     update_calendar_event,
@@ -206,7 +207,7 @@ class NotificationService:
         appointment_id: str,
     ) -> dict:
         """Notify patient that their consultation is completed, sending doctor notes and rating link."""
-        detail_url = f"http://localhost:5173/patient/appointments/{appointment_id}"
+        detail_url = f"{settings.FRONTEND_URL}/patient/appointments/{appointment_id}"
         email_sent = await send_email(
             to_email=patient_email,
             subject="Your Consultation is Completed — MedPlus AI",
