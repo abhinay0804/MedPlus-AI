@@ -46,7 +46,9 @@ def _render_template(template_name: str, context: Dict[str, Any]) -> str:
 
 
 def is_smtp_configured() -> bool:
-    """Return True if real SMTP server credentials are provided."""
+    """Return True if real SMTP server credentials or Resend API key is provided."""
+    if os.getenv("RESEND_API_KEY"):
+        return True
     return bool(
         settings.SMTP_USER
         and settings.SMTP_PASSWORD
@@ -66,7 +68,7 @@ async def send_email(
     context: Dict[str, Any],
 ) -> bool:
     """
-    Render HTML template and send email via SMTP or simulate send if unconfigured / dev environment.
+    Render HTML template and send email via Resend API, SMTP or simulate send.
     Returns True on success or simulation fallback.
     """
     from datetime import datetime
@@ -98,7 +100,39 @@ async def send_email(
         )
         return True
 
-    # Real SMTP send via fastapi-mail
+    # 1. Real HTTP send via Resend API (Preferred for Render Free Tier to bypass SMTP blocks)
+    resend_api_key = os.getenv("RESEND_API_KEY")
+    if resend_api_key:
+        try:
+            import httpx
+            from_sender = settings.EMAIL_FROM_ADDRESS
+            # Resend requires onboarding@resend.dev or a verified domain (gmail is not allowed as sender)
+            if "gmail.com" in from_sender.lower() or "hotmail.com" in from_sender.lower() or "@resend.dev" in from_sender.lower():
+                from_sender = "MedPulse AI <onboarding@resend.dev>"
+            else:
+                from_sender = f"{settings.EMAIL_FROM_NAME} <{settings.EMAIL_FROM_ADDRESS}>"
+
+            payload = {
+                "from": from_sender,
+                "to": [to_email],
+                "subject": subject,
+                "html": html_content
+            }
+            headers = {
+                "Authorization": f"Bearer {resend_api_key}",
+                "Content-Type": "application/json"
+            }
+            async with httpx.AsyncClient() as client:
+                resp = await client.post("https://api.resend.com/emails", json=payload, headers=headers, timeout=10.0)
+                if resp.status_code in (200, 201):
+                    logger.info(f"[EmailService via RESEND] Successfully sent email to {to_email}")
+                    return True
+                else:
+                    logger.warning(f"[EmailService via RESEND] API returned {resp.status_code}: {resp.text}")
+        except Exception as e:
+            logger.error(f"[EmailService via RESEND] Exception: {e}")
+
+    # 2. Real SMTP send via fastapi-mail
     try:
         from fastapi_mail import FastMail, MessageSchema, ConnectionConfig, MessageType
 
