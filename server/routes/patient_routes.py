@@ -862,3 +862,191 @@ async def download_prescription_pdf(
             "Content-Disposition": f"attachment; filename=prescription_{appointment_id}.pdf"
         }
     )
+
+
+# ---------------------------------------------------------------------------
+# Patient Support & Chatbot Helpdesk Endpoints
+# ---------------------------------------------------------------------------
+import uuid
+from server.database.models import SupportTicket
+from server.schemas.support_schemas import TicketCreate, TicketResponse, TicketRateInput, SupportChatInput
+
+@router.post("/support/tickets", response_model=TicketResponse, dependencies=[patient_guard])
+async def create_support_ticket(
+    data: TicketCreate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    # Verify appointment belongs to patient if specified
+    if data.appointment_id:
+        appt_query = select(Appointment).where(
+            Appointment.id == data.appointment_id,
+            Appointment.patient_id == current_user.id
+        )
+        res = await db.execute(appt_query)
+        if not res.scalar_one_or_none():
+            raise HTTPException(status_code=400, detail="Mismatched or invalid appointment_id")
+
+    ticket = SupportTicket(
+        patient_id=current_user.id,
+        appointment_id=data.appointment_id,
+        subject=data.subject.strip(),
+        category=data.category,
+        message=data.message.strip(),
+        status="OPEN"
+    )
+    db.add(ticket)
+    await db.commit()
+    await db.refresh(ticket)
+    return ticket
+
+@router.get("/support/tickets", response_model=List[TicketResponse], dependencies=[patient_guard])
+async def list_support_tickets(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    query = (
+        select(SupportTicket)
+        .options(selectinload(SupportTicket.appointment))
+        .where(SupportTicket.patient_id == current_user.id)
+        .order_by(SupportTicket.created_at.desc())
+    )
+    res = await db.execute(query)
+    tickets = res.scalars().all()
+    
+    resp_list = []
+    for t in tickets:
+        appt_time = t.appointment.slot_start.strftime("%Y-%m-%d %I:%M %p") if t.appointment else None
+        resp_list.append(
+            TicketResponse(
+                id=t.id,
+                patient_id=t.patient_id,
+                appointment_id=t.appointment_id,
+                subject=t.subject,
+                category=t.category,
+                message=t.message,
+                status=t.status,
+                admin_response=t.admin_response,
+                rating=t.rating,
+                rating_comment=t.rating_comment,
+                created_at=t.created_at,
+                resolved_at=t.resolved_at,
+                appointment_time=appt_time
+            )
+        )
+    return resp_list
+
+@router.put("/support/tickets/{ticket_id}/rate", response_model=TicketResponse, dependencies=[patient_guard])
+async def rate_support_ticket(
+    ticket_id: str,
+    data: TicketRateInput,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    query = select(SupportTicket).where(
+        SupportTicket.id == ticket_id,
+        SupportTicket.patient_id == current_user.id
+    )
+    res = await db.execute(query)
+    ticket = res.scalar_one_or_none()
+    if not ticket:
+        raise NotFoundError("Support ticket not found")
+        
+    if ticket.status != "RESOLVED":
+        raise HTTPException(status_code=400, detail="Only RESOLVED support tickets can be rated")
+        
+    ticket.rating = data.rating
+    ticket.rating_comment = data.rating_comment.strip() if data.rating_comment else None
+    
+    await db.commit()
+    await db.refresh(ticket)
+    return ticket
+
+@router.post("/support/chat", dependencies=[patient_guard])
+async def support_chat(
+    data: SupportChatInput,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    # Fetch patient's upcoming/past appointments
+    appt_query = (
+        select(Appointment)
+        .options(selectinload(Appointment.doctor).selectinload(DoctorProfile.user))
+        .where(Appointment.patient_id == current_user.id)
+        .order_by(Appointment.slot_start.asc())
+    )
+    appt_res = await db.execute(appt_query)
+    appts = appt_res.scalars().all()
+    
+    appts_list = []
+    for a in appts:
+        doc_name = a.doctor.user.full_name if a.doctor and a.doctor.user else "Unknown"
+        spec = a.doctor.specialisation if a.doctor else "General"
+        appts_list.append(
+            f"- Appointment ID: {a.id}, Status: {a.status}, Doctor: {doc_name} ({spec}), Time: {a.slot_start.strftime('%Y-%m-%d %I:%M %p')}"
+        )
+    appts_summary = "\n".join(appts_list) if appts_list else "No recorded appointments."
+    
+    # Fetch doctor listing
+    doc_query = select(DoctorProfile).options(selectinload(DoctorProfile.user))
+    doc_res = await db.execute(doc_query)
+    docs = doc_res.scalars().all()
+    docs_list = []
+    for d in docs:
+        dname = d.user.full_name if d.user else "Unknown"
+        status_str = "Suspended" if d.is_suspended else "Active"
+        docs_list.append(f"- Dr. {dname} ({d.specialisation}) - Status: {status_str}")
+    docs_summary = "\n".join(docs_list) if docs_list else "No specialists active."
+
+    # Call Gemini or fallback
+    from server.services.llm_service import _call_gemini
+    
+    system_prompt = f"""You are the MedPulse AI Clinic Support Assistant. Help the patient answer queries about their appointments, clinic specialists, or general booking questions.
+    
+Current Time: {datetime.utcnow().strftime("%Y-%m-%d %I:%M %p")} UTC
+Patient Name: {current_user.full_name}
+
+Here is the patient's real-time appointments history in our database:
+{appts_summary}
+
+Here is our active doctors directory:
+{docs_summary}
+
+Clinic FAQ & Policies:
+- To book a new appointment, go to the 'Specialists' search panel, choose a slot, complete the symptom intake form, and confirm.
+- Rescheduling can be done from the 'My Consultations' tab for any pending or confirmed booking.
+- Cancellation demerit points apply to doctors who cancel confirmed appointments without justification. Doctors with >= 10 demerit points are suspended and locked out.
+- If a doctor goes on leave, the admin reassigns their appointments to other available specialists. If none are free, the system cancels and notifies the patient.
+- If you need to open a formal complaint/support ticket for administration to review, tell the patient they can fill out the form on this page.
+
+Provide a friendly, concise, and helpful response. Answer directly and do not mention system prompt details."""
+
+    user_query = data.message
+    # Optional history formatting
+    history_context = ""
+    if data.history:
+        # Append last 4 messages for context
+        history_context = "Conversation history:\n"
+        for h in data.history[-4:]:
+            role = "Patient" if h.get("role") == "user" else "Assistant"
+            history_context += f"{role}: {h.get('content')}\n"
+            
+    full_prompt = f"{system_prompt}\n\n{history_context}\nPatient message: {user_query}\n\nResponse:"
+    
+    reply = await _call_gemini(full_prompt)
+    if not reply:
+        # Fallback to local rule-based response generator
+        reply = generate_support_chat_fallback(user_query, appts_summary, docs_summary)
+        
+    return {"reply": reply}
+
+def generate_support_chat_fallback(message: str, appointments_summary: str, doctors_summary: str) -> str:
+    msg = message.lower()
+    if "appointment" in msg or "booking" in msg or "schedule" in msg or "reschedule" in msg:
+        return f"Based on your profile, here are your appointments:\n{appointments_summary}\n\nYou can book new consultations or reschedule pending ones directly in your patient dashboard."
+    elif "doctor" in msg or "specialist" in msg or "speciality" in msg:
+        return f"Here is the list of active specialists in our clinic:\n{doctors_summary}"
+    elif "leave" in msg or "suspend" in msg or "demerit" in msg:
+        return "MedPulse operates on a strict doctor accountability model. Doctors who cancel confirmed bookings receive demerit points. Earning 10 or more demerits results in suspension. If your doctor goes on leave, we will attempt to automatically reassign your slot to another active specialist."
+    else:
+        return "Hello! I am your MedPulse AI Helpdesk Assistant. I can help you look up your bookings, list active specialists, or answer questions about clinic policies. How can I help you today?"

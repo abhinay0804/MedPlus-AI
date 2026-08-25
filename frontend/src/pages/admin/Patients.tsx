@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { Layout } from '../../components/Layout'
 import { api } from '../../lib/api'
-import { Search, User, Mail, Phone, Globe, Calendar, CheckCircle2, AlertTriangle, ShieldCheck } from 'lucide-react'
+import { Search, User, Mail, Phone, Globe, Calendar, CheckCircle2, AlertTriangle, ShieldCheck, Star } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface PatientStats {
@@ -29,7 +29,10 @@ export const Patients: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedPatient, setSelectedPatient] = useState<PatientRecord | null>(null)
   const [patientHistory, setPatientHistory] = useState<any[]>([])
+  const [patientTickets, setPatientTickets] = useState<any[]>([])
   const [isLoadingHistory, setIsLoadingHistory] = useState(false)
+  const [isLoadingTickets, setIsLoadingTickets] = useState(false)
+  const [detailTab, setDetailTab] = useState<'history' | 'tickets'>('history')
 
   useEffect(() => {
     fetchPatients()
@@ -59,14 +62,24 @@ export const Patients: React.FC = () => {
   const handleViewHistory = async (patient: PatientRecord) => {
     try {
       setSelectedPatient(patient)
+      setDetailTab('history')
       setIsLoadingHistory(true)
+      setIsLoadingTickets(true)
       setPatientHistory([])
-      const data = await api.get<any[]>(`/admin/appointments?patient_id=${patient.id}`)
-      setPatientHistory(data)
+      setPatientTickets([])
+      
+      const [historyData, ticketsData] = await Promise.all([
+        api.get<any[]>(`/admin/appointments?patient_id=${patient.id}`),
+        api.get<any[]>(`/admin/support/patients/${patient.id}/tickets`)
+      ])
+      
+      setPatientHistory(historyData)
+      setPatientTickets(ticketsData)
     } catch (err: any) {
-      toast.error(err.message || 'Failed to load patient history')
+      toast.error(err.message || 'Failed to load patient profile data')
     } finally {
       setIsLoadingHistory(false)
+      setIsLoadingTickets(false)
     }
   }
 
@@ -225,60 +238,145 @@ export const Patients: React.FC = () => {
                   <p className="text-xs text-slate-400 mt-1">Joined: {new Date(selectedPatient.created_at).toLocaleDateString()}</p>
                 </div>
 
-                <div className="space-y-3">
-                  <h3 className="text-sm font-semibold text-slate-950 dark:text-white flex items-center space-x-2">
-                    <ShieldCheck className="w-4 h-4 text-teal-600" />
-                    <span>Consultation History log</span>
-                  </h3>
-
-                  {isLoadingHistory ? (
-                    <p className="text-xs text-slate-400 italic">Retrieving historical records...</p>
-                  ) : patientHistory.length === 0 ? (
-                    <p className="text-xs text-slate-400 italic">No historical visits found.</p>
-                  ) : (
-                    <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
-                      {patientHistory.map((appt) => (
-                        <div key={appt.id} className="p-3 rounded-lg border border-slate-100 dark:border-slate-850 space-y-2">
-                          <div className="flex items-center justify-between text-[10px]">
-                            <span className={`px-2 py-0.5 rounded font-bold uppercase ${getStatusBadge(appt.status)}`}>
-                              {appt.status.replace('_', ' ')}
-                            </span>
-                            <span className="text-slate-400">
-                              {new Date(appt.slot_start + 'Z').toLocaleDateString(undefined, {
-                                month: 'short',
-                                day: 'numeric',
-                                year: 'numeric',
-                              })}
-                            </span>
-                          </div>
-
-                          <div className="text-xs">
-                            <span className="text-slate-500">Doctor: </span>
-                            <span className="font-semibold text-slate-800 dark:text-slate-200">Dr. {appt.doctor?.user?.full_name}</span>
-                          </div>
-
-                          {appt.symptom_form && (
-                            <div className="text-[11px] bg-slate-50 dark:bg-slate-950 p-2 rounded text-slate-600 dark:text-slate-450 border border-slate-100 dark:border-slate-900/50">
-                              <span className="font-medium">Symptoms: </span>
-                              {appt.symptom_form.symptoms_text}
-                            </div>
-                          )}
-
-                          {appt.post_visit_note && (
-                            <div className="text-[11px] bg-slate-50 dark:bg-slate-950 p-2 rounded text-slate-600 dark:text-slate-450 border border-slate-100 dark:border-slate-900/50">
-                              <span className="font-medium">Diagnosis: </span>
-                              {appt.post_visit_note.patient_summary ? (
-                                <span>Note summaries parsed</span>
-                              ) : (
-                                appt.post_visit_note.doctor_notes
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                {/* Sub-Tabs: History vs Tickets */}
+                <div className="flex border-b border-slate-100 dark:border-slate-800">
+                  <button
+                    onClick={() => setDetailTab('history')}
+                    className={`flex-1 pb-3 text-xs font-bold border-b-2 text-center transition ${
+                      detailTab === 'history'
+                        ? 'border-teal-500 text-teal-600 dark:text-teal-400'
+                        : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                    }`}
+                  >
+                    Consultations ({patientHistory.length})
+                  </button>
+                  <button
+                    onClick={() => setDetailTab('tickets')}
+                    className={`flex-1 pb-3 text-xs font-bold border-b-2 text-center transition ${
+                      detailTab === 'tickets'
+                        ? 'border-teal-500 text-teal-600 dark:text-teal-400'
+                        : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                    }`}
+                  >
+                    Support Enquiries ({patientTickets.length})
+                  </button>
                 </div>
+
+                {detailTab === 'history' ? (
+                  <div className="space-y-3">
+                    {isLoadingHistory ? (
+                      <p className="text-xs text-slate-400 italic">Retrieving historical records...</p>
+                    ) : patientHistory.length === 0 ? (
+                      <p className="text-xs text-slate-400 italic">No historical visits found.</p>
+                    ) : (
+                      <div className="space-y-3 max-h-[360px] overflow-y-auto pr-1">
+                        {patientHistory.map((appt) => (
+                          <div key={appt.id} className="p-3 rounded-lg border border-slate-100 dark:border-slate-850 space-y-2 text-xs">
+                            <div className="flex items-center justify-between text-[10px]">
+                              <span className={`px-2 py-0.5 rounded font-bold uppercase ${getStatusBadge(appt.status)}`}>
+                                {appt.status.replace('_', ' ')}
+                              </span>
+                              <span className="text-slate-400 font-semibold">
+                                {new Date(appt.slot_start + 'Z').toLocaleDateString(undefined, {
+                                  month: 'short',
+                                  day: 'numeric',
+                                  year: 'numeric',
+                                })}
+                              </span>
+                            </div>
+
+                            <div>
+                              <span className="text-slate-550 dark:text-slate-400 font-semibold">Doctor: </span>
+                              <span className="font-bold text-slate-800 dark:text-slate-200">Dr. {appt.doctor?.user?.full_name}</span>
+                            </div>
+
+                            {appt.symptom_form && (
+                              <div className="text-[11px] bg-slate-50 dark:bg-slate-950 p-2 rounded text-slate-600 dark:text-slate-400 border border-slate-100 dark:border-slate-900/50">
+                                <span className="font-bold">Symptoms: </span>
+                                {appt.symptom_form.symptoms_text}
+                              </div>
+                            )}
+
+                            {appt.post_visit_note && (
+                              <div className="text-[11px] bg-slate-50 dark:bg-slate-950 p-2 rounded text-slate-600 dark:text-slate-400 border border-slate-100 dark:border-slate-900/50">
+                                <span className="font-bold">Diagnosis: </span>
+                                {appt.post_visit_note.patient_summary ? (
+                                  <span>Note summaries parsed</span>
+                                ) : (
+                                  appt.post_visit_note.doctor_notes
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {isLoadingTickets ? (
+                      <p className="text-xs text-slate-400 italic">Retrieving support entries...</p>
+                    ) : patientTickets.length === 0 ? (
+                      <p className="text-xs text-slate-400 italic">No support enquiries submitted.</p>
+                    ) : (
+                      <div className="space-y-3 max-h-[360px] overflow-y-auto pr-1">
+                        {patientTickets.map((t) => (
+                          <div key={t.id} className="p-3 rounded-lg border border-slate-100 dark:border-slate-850 space-y-2 text-xs">
+                            <div className="flex items-center justify-between text-[10px]">
+                              <span className={`px-2 py-0.5 rounded font-black border text-[9px] uppercase ${
+                                t.status === 'RESOLVED' 
+                                  ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' 
+                                  : t.status === 'IN_PROGRESS' 
+                                    ? 'bg-blue-500/10 text-blue-500 border-blue-500/20' 
+                                    : 'bg-amber-500/10 text-amber-500 border-amber-500/20'
+                              }`}>
+                                {t.status.replace('_', ' ')}
+                              </span>
+                              <span className="text-slate-400 font-semibold">
+                                {new Date(t.created_at).toLocaleDateString(undefined, {
+                                  month: 'short',
+                                  day: 'numeric',
+                                  year: 'numeric',
+                                })}
+                              </span>
+                            </div>
+
+                            <div className="font-bold text-slate-850 dark:text-white leading-tight">
+                              {t.subject}
+                            </div>
+                            
+                            <div className="text-[10px] text-slate-500 font-semibold">
+                              Category: {t.category.replace('_', ' ')}
+                            </div>
+
+                            <div className="text-[11px] bg-slate-50 dark:bg-slate-950 p-2 rounded text-slate-600 dark:text-slate-400 border border-slate-100 dark:border-slate-900/50">
+                              <span className="font-bold">Message: </span>
+                              {t.message}
+                            </div>
+
+                            {t.admin_response && (
+                              <div className="text-[11px] bg-teal-500/5 dark:bg-teal-550/10 p-2 rounded text-slate-700 dark:text-slate-350 border border-teal-500/10">
+                                <span className="font-bold text-teal-600 dark:text-teal-400">Response: </span>
+                                {t.admin_response}
+                              </div>
+                            )}
+
+                            {t.rating && (
+                              <div className="flex items-center space-x-1 text-[10px] font-bold text-amber-500">
+                                <span className="text-slate-400">Rating: </span>
+                                <div className="flex space-x-0.5">
+                                  {[1, 2, 3, 4, 5].map(star => (
+                                    <Star key={star} className={`w-3.5 h-3.5 ${star <= t.rating! ? 'fill-amber-400' : 'text-slate-300 dark:text-slate-700'}`} />
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             ) : (
               <div className="bg-slate-50 dark:bg-slate-900/50 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-xl p-8 text-center text-slate-400">

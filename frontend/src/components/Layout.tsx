@@ -15,6 +15,7 @@ import {
   ShieldCheck,
   CalendarDays,
   ClipboardList,
+  MessageSquare,
 } from 'lucide-react'
 
 export const Layout: React.FC<{ children: React.ReactNode; activeTab?: string }> = ({ children, activeTab }) => {
@@ -33,6 +34,7 @@ export const Layout: React.FC<{ children: React.ReactNode; activeTab?: string }>
     { to: '/patient/doctors', label: 'Find Doctors', icon: Stethoscope },
     { to: '/patient/appointments', label: 'My Appointments', icon: Calendar },
     { to: '/patient/settings', label: 'Account Settings', icon: SettingsIcon },
+    { to: '/patient/support', label: 'Help & Support', icon: MessageSquare },
   ]
 
   const doctorLinks = [
@@ -48,6 +50,7 @@ export const Layout: React.FC<{ children: React.ReactNode; activeTab?: string }>
     { to: '/admin/leave', label: 'Leave Manager', icon: CalendarDays },
     { to: '/admin/patients', label: 'Patient Registry', icon: Users },
     { to: '/admin/audit', label: 'Audit Trail', icon: ShieldCheck },
+    { to: '/admin/support', label: 'Support Tickets', icon: MessageSquare },
   ]
 
   let links = patientLinks

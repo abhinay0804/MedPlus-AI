@@ -24,6 +24,8 @@ import { LeaveManager } from './pages/admin/LeaveManager'
 import { AuditLogPage } from './pages/admin/AuditLog'
 import { Appointments as AdminAppointments } from './pages/admin/Appointments'
 import { Patients as AdminPatients } from './pages/admin/Patients'
+import SupportCenter from './pages/patient/SupportCenter'
+import HelpdeskConsole from './pages/admin/HelpdeskConsole'
 
 export const App: React.FC = () => {
   return (
@@ -93,6 +95,14 @@ export const App: React.FC = () => {
               element={
                 <RequireAuth allowedRoles={['PATIENT']}>
                   <PatientSettings />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/patient/support"
+              element={
+                <RequireAuth allowedRoles={['PATIENT']}>
+                  <SupportCenter />
                 </RequireAuth>
               }
             />
@@ -185,6 +195,14 @@ export const App: React.FC = () => {
               element={
                 <RequireAuth allowedRoles={['ADMIN']}>
                   <AdminPatients />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/admin/support"
+              element={
+                <RequireAuth allowedRoles={['ADMIN']}>
+                  <HelpdeskConsole />
                 </RequireAuth>
               }
             />

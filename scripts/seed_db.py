@@ -7,13 +7,19 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from server.database.connection import AsyncSessionLocal
 from server.repositories.user_repository import UserRepository
-from server.database.models import UserRole, DoctorProfile
+from server.database.models import UserRole, DoctorProfile, SupportTicket
+from datetime import datetime
 from sqlalchemy import select
 
 from server.auth import hash_password
 
 async def seed():
     print("🌱 Seeding database...")
+    from server.database.connection import engine, Base
+    import server.database.models as _models
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
     async with AsyncSessionLocal() as db:
         user_repo = UserRepository(db)
         
@@ -116,6 +122,30 @@ async def seed():
         else:
             patient.password_hash = hash_password("PatientPassword123!")
             print(f"🔄 Sample Patient password reset: {patient_email} / PatientPassword123!")
+
+        # 4. Seed Support Tickets for Patient
+        ticket_check = await db.execute(select(SupportTicket).where(SupportTicket.patient_id == patient.id))
+        if not ticket_check.scalars().first():
+            open_ticket = SupportTicket(
+                patient_id=patient.id,
+                subject="Double charge on consultation fee",
+                category="BILLING_ISSUE",
+                message="Hi, I noticed my card was billed twice for my last appointment on Monday. Can you please refund the extra charge?",
+                status="OPEN"
+            )
+            resolved_ticket = SupportTicket(
+                patient_id=patient.id,
+                subject="Need to change doctor due to urgency",
+                category="APPOINTMENT_QUERY",
+                message="Can I reschedule my appointment with Dr. Chen to tomorrow? I have a sudden checkup need.",
+                status="RESOLVED",
+                admin_response="We have approved your request and updated your booking to tomorrow at 9:00 AM.",
+                rating=5,
+                rating_comment="Fast response! Thank you very much.",
+                resolved_at=datetime.utcnow()
+            )
+            db.add_all([open_ticket, resolved_ticket])
+            print("✅ Seeding support tickets for Sample Patient")
 
         await db.commit()
     print("🌱 Database seeding complete!")

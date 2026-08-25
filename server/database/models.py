@@ -290,3 +290,24 @@ class InAppNotification(Base):
 
     # Relationships
     user: Mapped["User"] = relationship("User", back_populates="notifications")
+
+
+class SupportTicket(Base):
+    __tablename__ = "support_tickets"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    patient_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    appointment_id: Mapped[str] = mapped_column(String(36), ForeignKey("appointments.id", ondelete="SET NULL"), nullable=True, index=True)
+    subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    category: Mapped[str] = mapped_column(String(50), nullable=False) # e.g. "APPOINTMENT_QUERY", "BILLING_ISSUE", "COMPLAINT", "TECHNICAL_SUPPORT", "OTHER"
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="OPEN", nullable=False) # "OPEN", "IN_PROGRESS", "RESOLVED"
+    admin_response: Mapped[str] = mapped_column(Text, nullable=True)
+    rating: Mapped[int] = mapped_column(Integer, nullable=True)
+    rating_comment: Mapped[str] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    resolved_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+
+    # Relationships
+    patient: Mapped["User"] = relationship("User", foreign_keys=[patient_id])
+    appointment: Mapped["Appointment"] = relationship("Appointment", foreign_keys=[appointment_id])

@@ -1,7 +1,7 @@
 import logging
 from datetime import datetime
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
@@ -1453,3 +1453,168 @@ async def reassign_appointment(
     )
     
     return {"status": "success", "message": "Appointment reassigned successfully"}
+
+
+# ---------------------------------------------------------------------------
+# Admin Helpdesk Ticketing Console Endpoints
+# ---------------------------------------------------------------------------
+from server.database.models import SupportTicket, InAppNotification
+from server.schemas.support_schemas import TicketRespondInput, TicketResponse
+from sqlalchemy.orm import selectinload
+
+@router.get("/support/tickets", response_model=List[TicketResponse], dependencies=[admin_guard])
+async def list_all_support_tickets(
+    status_filter: Optional[str] = Query(None, alias="status"),
+    category_filter: Optional[str] = Query(None, alias="category"),
+    search: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
+    query = (
+        select(SupportTicket)
+        .options(
+            selectinload(SupportTicket.patient),
+            selectinload(SupportTicket.appointment)
+        )
+        .order_by(SupportTicket.created_at.desc())
+    )
+    
+    if status_filter:
+        query = query.where(SupportTicket.status == status_filter)
+    if category_filter:
+        query = query.where(SupportTicket.category == category_filter)
+        
+    res = await db.execute(query)
+    tickets = res.scalars().all()
+    
+    # Optional search filtering in memory (due to nested relationships)
+    if search:
+        s = search.lower().strip()
+        tickets = [
+            t for t in tickets
+            if s in t.subject.lower()
+            or s in t.message.lower()
+            or s in t.patient.full_name.lower()
+            or s in t.patient.email.lower()
+        ]
+        
+    resp_list = []
+    for t in tickets:
+        appt_time = t.appointment.slot_start.strftime("%Y-%m-%d %I:%M %p") if t.appointment else None
+        resp_list.append(
+            TicketResponse(
+                id=t.id,
+                patient_id=t.patient_id,
+                appointment_id=t.appointment_id,
+                subject=t.subject,
+                category=t.category,
+                message=t.message,
+                status=t.status,
+                admin_response=t.admin_response,
+                rating=t.rating,
+                rating_comment=t.rating_comment,
+                created_at=t.created_at,
+                resolved_at=t.resolved_at,
+                patient_name=t.patient.full_name,
+                patient_email=t.patient.email,
+                appointment_time=appt_time
+            )
+        )
+    return resp_list
+
+@router.get("/support/patients/{patient_id}/tickets", response_model=List[TicketResponse], dependencies=[admin_guard])
+async def list_patient_tickets_for_admin(
+    patient_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    query = (
+        select(SupportTicket)
+        .options(
+            selectinload(SupportTicket.patient),
+            selectinload(SupportTicket.appointment)
+        )
+        .where(SupportTicket.patient_id == patient_id)
+        .order_by(SupportTicket.created_at.desc())
+    )
+    res = await db.execute(query)
+    tickets = res.scalars().all()
+    
+    resp_list = []
+    for t in tickets:
+        appt_time = t.appointment.slot_start.strftime("%Y-%m-%d %I:%M %p") if t.appointment else None
+        resp_list.append(
+            TicketResponse(
+                id=t.id,
+                patient_id=t.patient_id,
+                appointment_id=t.appointment_id,
+                subject=t.subject,
+                category=t.category,
+                message=t.message,
+                status=t.status,
+                admin_response=t.admin_response,
+                rating=t.rating,
+                rating_comment=t.rating_comment,
+                created_at=t.created_at,
+                resolved_at=t.resolved_at,
+                patient_name=t.patient.full_name,
+                patient_email=t.patient.email,
+                appointment_time=appt_time
+            )
+        )
+    return resp_list
+
+@router.put("/support/tickets/{ticket_id}/respond", response_model=TicketResponse, dependencies=[admin_guard])
+async def respond_to_support_ticket(
+    ticket_id: str,
+    data: TicketRespondInput,
+    db: AsyncSession = Depends(get_db),
+):
+    query = (
+        select(SupportTicket)
+        .options(
+            selectinload(SupportTicket.patient),
+            selectinload(SupportTicket.appointment)
+        )
+        .where(SupportTicket.id == ticket_id)
+    )
+    res = await db.execute(query)
+    ticket = res.scalar_one_or_none()
+    if not ticket:
+        raise NotFoundError("Support ticket not found")
+        
+    ticket.admin_response = data.admin_response.strip()
+    if data.keep_open:
+        ticket.status = "IN_PROGRESS"
+    else:
+        ticket.status = "RESOLVED"
+        ticket.resolved_at = datetime.utcnow()
+        
+    # Dispatch In-App Notification to Patient
+    notif = InAppNotification(
+        user_id=ticket.patient_id,
+        title=f"Support Query Answered: {ticket.subject}",
+        body=f"Administration has replied to your query. Status: {ticket.status.replace('_', ' ')}.",
+        type="system",
+        link="/patient/support"
+    )
+    db.add(notif)
+    await db.commit()
+    await db.refresh(ticket)
+    
+    appt_time = ticket.appointment.slot_start.strftime("%Y-%m-%d %I:%M %p") if ticket.appointment else None
+    return TicketResponse(
+        id=ticket.id,
+        patient_id=ticket.patient_id,
+        appointment_id=ticket.appointment_id,
+        subject=ticket.subject,
+        category=ticket.category,
+        message=ticket.message,
+        status=ticket.status,
+        admin_response=ticket.admin_response,
+        rating=ticket.rating,
+        rating_comment=ticket.rating_comment,
+        created_at=ticket.created_at,
+        resolved_at=ticket.resolved_at,
+        patient_name=ticket.patient.full_name,
+        patient_email=ticket.patient.email,
+        appointment_time=appt_time
+    )
