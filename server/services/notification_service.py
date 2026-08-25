@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 from typing import List, Optional, Any
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from server.services.email_service import send_email
 from server.config import settings
@@ -49,7 +49,7 @@ class NotificationService:
                 "patient_name": patient_name,
                 "doctor_name": doctor_name,
                 "specialisation": specialisation,
-                "slot_start": slot_start.strftime("%Y-%m-%d %H:%M UTC"),
+                "slot_start": (slot_start + timedelta(hours=5, minutes=30)).strftime("%Y-%m-%d %I:%M %p IST"),
                 "appointment_id": appointment_id,
             },
         )
@@ -133,8 +133,8 @@ class NotificationService:
             context={
                 "patient_name": patient_name,
                 "doctor_name": doctor_name,
-                "old_slot_start": old_slot_start.strftime("%Y-%m-%d %H:%M UTC"),
-                "new_slot_start": new_slot_start.strftime("%Y-%m-%d %H:%M UTC"),
+                "old_slot_start": (old_slot_start + timedelta(hours=5, minutes=30)).strftime("%Y-%m-%d %I:%M %p IST"),
+                "new_slot_start": (new_slot_start + timedelta(hours=5, minutes=30)).strftime("%Y-%m-%d %I:%M %p IST"),
                 "appointment_id": appointment_id,
             },
         )

@@ -402,7 +402,7 @@ def send_appointment_reminders_task():
                         "patient_name": appt.patient.full_name,
                         "doctor_name": appt.doctor.user.full_name,
                         "specialisation": appt.doctor.specialisation,
-                        "slot_start": appt.slot_start.strftime("%Y-%m-%d %H:%M UTC"),
+                        "slot_start": (appt.slot_start + timedelta(hours=5, minutes=30)).strftime("%Y-%m-%d %I:%M %p IST"),
                         "appointment_id": appt.id,
                     }
                 )

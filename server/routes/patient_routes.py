@@ -5,7 +5,7 @@ All booking-facing endpoints. Patients search doctors, view available slots,
 create holds, submit symptom forms, confirm bookings, cancel, and reschedule.
 """
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -708,7 +708,7 @@ def generate_prescription_pdf(appt) -> bytes:
         ],
         [
             Paragraph(f"Phone: {appt.patient.phone or 'N/A'}", body_style),
-            Paragraph(f"Consultation Date: {appt.slot_start.strftime('%Y-%m-%d %H:%M UTC')}", body_style)
+            Paragraph(f"Consultation Date: {(appt.slot_start + timedelta(hours=5, minutes=30)).strftime('%Y-%m-%d %I:%M %p')} IST", body_style)
         ]
     ]
     
@@ -787,9 +787,9 @@ def generate_prescription_pdf(appt) -> bytes:
     def add_watermark_and_footer(canvas, doc):
         # Draw background watermark
         canvas.saveState()
-        canvas.setFont('Helvetica-Bold', 60)
+        canvas.setFont('Helvetica-Bold', 75)
         canvas.setFillColor(colors.HexColor("#cbd5e1"))
-        canvas.setFillAlpha(0.06)  # Subtle transparent watermark
+        canvas.setFillAlpha(0.12)  # Make it larger and more visible
         
         # Center coordinates for Letter size page: (306, 396)
         canvas.translate(306, 396)
