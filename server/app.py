@@ -11,9 +11,19 @@ from server.websocket import ws_router, redis_subscriber
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     import asyncio
-    # Startup: ensure tables exist if sqlite fallback
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    # Startup: ensure tables exist — retry up to 5 times for cold-start DB readiness
+    for attempt in range(5):
+        try:
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            print("✅ Database tables ready.")
+            break
+        except Exception as e:
+            print(f"⚠️ DB connection attempt {attempt + 1}/5 failed: {e}")
+            if attempt < 4:
+                await asyncio.sleep(3)
+            else:
+                print("❌ Could not connect to database after 5 attempts. Starting without DB init.")
     # Auto-seed default demo accounts if missing
     try:
         from scripts.seed_db import seed
@@ -21,7 +31,10 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"⚠️ Auto-seed notice: {e}")
     # Start Redis Pub/Sub subscriber for WebSocket fan-out (non-fatal if Redis down)
-    asyncio.create_task(redis_subscriber())
+    try:
+        asyncio.create_task(redis_subscriber())
+    except Exception as e:
+        print(f"⚠️ Redis subscriber not started: {e}")
     yield
     # Shutdown
     await engine.dispose()
