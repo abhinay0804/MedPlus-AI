@@ -471,9 +471,9 @@ async def reschedule_slot(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You can only reschedule your own appointments",
         )
-    if old_appt.status not in [AppointmentStatus.CONFIRMED, AppointmentStatus.HELD]:
+    if old_appt.status not in [AppointmentStatus.CONFIRMED, AppointmentStatus.PENDING_APPROVAL, AppointmentStatus.HELD]:
         raise SlotConflictError(
-            f"Only CONFIRMED or HELD appointments can be rescheduled"
+            f"Only CONFIRMED, PENDING_APPROVAL, or HELD appointments can be rescheduled"
         )
 
     # Mark old appointment RESCHEDULED

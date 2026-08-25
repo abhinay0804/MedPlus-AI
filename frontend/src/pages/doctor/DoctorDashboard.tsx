@@ -217,7 +217,7 @@ export const DoctorDashboard: React.FC = () => {
     try {
       setIsVerifyingOtp(true)
       await api.post(`/doctor/appointments/${apptId}/start-verify`, {
-        start_otp: otpInput
+        otp: otpInput
       })
       toast.success('Verification code accepted. Consultation unlocked!')
       setStartedConsultations((prev) => ({ ...prev, [apptId]: true }))
@@ -292,13 +292,25 @@ export const DoctorDashboard: React.FC = () => {
         return appointments.filter((a) => a.status === 'CONFIRMED')
       case 'CANCELLED':
         return appointments.filter((a) => a.status === 'CANCELLED')
-      case 'UPCOMING':
-        return appointments
+      case 'UPCOMING': {
+        const confirmed = appointments.filter((a) => a.status === 'CONFIRMED')
+        const next24 = confirmed
           .filter((a) => {
             const start = parseDate(a.slot_start).getTime()
-            return a.status === 'CONFIRMED' && start >= now && start <= now + 24 * 60 * 60 * 1000
+            // We allow start times within 5 minutes ago to handle currently active/just-started slots
+            return start >= now - 5 * 60 * 1000 && start <= now + 24 * 60 * 60 * 1000
           })
           .sort((a, b) => parseDate(a.slot_start).getTime() - parseDate(b.slot_start).getTime())
+        
+        if (next24.length > 0) {
+          return next24
+        }
+        
+        return confirmed
+          .filter((a) => parseDate(a.slot_start).getTime() >= now - 5 * 60 * 1000)
+          .sort((a, b) => parseDate(a.slot_start).getTime() - parseDate(b.slot_start).getTime())
+          .slice(0, 5)
+      }
       default:
         return appointments
     }
@@ -436,7 +448,7 @@ export const DoctorDashboard: React.FC = () => {
                   </span>
                 )}
                 {tab === 'UPCOMING' && (
-                  <span title="Upcoming includes confirmed consultations scheduled within the next 24 hours.">
+                  <span title="Upcoming includes confirmed consultations scheduled within the next 24 hours (or the next 5 future consultations if none are scheduled today).">
                     <Info className="w-3.5 h-3.5 text-slate-400 hover:text-teal-500 cursor-help" />
                   </span>
                 )}

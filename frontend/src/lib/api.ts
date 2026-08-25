@@ -77,6 +77,11 @@ export async function apiRequest<T = any>(
         }
       }
       let detail = data?.detail
+      if (Array.isArray(detail)) {
+        detail = detail.map((e: any) => e.msg || JSON.stringify(e)).join(', ')
+      } else if (typeof detail === 'object' && detail !== null) {
+        detail = JSON.stringify(detail)
+      }
       if (!detail || response.status >= 500) {
         detail = "We're working heads down to service you! Give us a quick moment and try again. 🚀"
       }

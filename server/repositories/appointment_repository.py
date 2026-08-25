@@ -49,7 +49,6 @@ class AppointmentRepository:
             stmt = stmt.where(
                 and_(
                     Appointment.status != AppointmentStatus.HELD,
-                    Appointment.status != AppointmentStatus.RESCHEDULED,
                     not_(
                         and_(
                             Appointment.status == AppointmentStatus.CANCELLED,
@@ -87,7 +86,6 @@ class AppointmentRepository:
             stmt = stmt.where(
                 and_(
                     Appointment.status != AppointmentStatus.HELD,
-                    Appointment.status != AppointmentStatus.RESCHEDULED,
                     not_(
                         and_(
                             Appointment.status == AppointmentStatus.CANCELLED,
