@@ -210,7 +210,7 @@ class NotificationService:
         detail_url = f"{settings.FRONTEND_URL}/patient/appointments/{appointment_id}"
         email_sent = await send_email(
             to_email=patient_email,
-            subject="Your Consultation is Completed — MedPlus AI",
+            subject="Your Consultation is Completed — MedPulse AI",
             template_name="appointment_completed.html",
             context={
                 "patient_name": patient_name,

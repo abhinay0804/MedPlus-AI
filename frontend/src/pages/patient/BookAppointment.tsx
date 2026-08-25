@@ -696,11 +696,11 @@ export const BookAppointment: React.FC = () => {
                         <p className="mt-0.5 opacity-90 leading-relaxed">
                           {isSpecialtyMismatch ? (
                             <>
-                              Currently selected doctor <strong>{doctor?.user?.full_name}</strong> is a <strong>{doctor?.specialisation}</strong> specialist, but MedPlus AI recommends a <strong>{activeRecommendedSpecialty}</strong> specialist. Booking is disabled.
+                              Currently selected doctor <strong>{doctor?.user?.full_name}</strong> is a <strong>{doctor?.specialisation}</strong> specialist, but MedPulse AI recommends a <strong>{activeRecommendedSpecialty}</strong> specialist. Booking is disabled.
                             </>
                           ) : (
                             <>
-                              MedPlus AI evaluated your symptoms and suggests a <strong>{activeRecommendedSpecialty}</strong> specialist. You can continue with <strong>{doctor?.user?.full_name}</strong> ({doctor?.specialisation}) or switch to a specialist.
+                              MedPulse AI evaluated your symptoms and suggests a <strong>{activeRecommendedSpecialty}</strong> specialist. You can continue with <strong>{doctor?.user?.full_name}</strong> ({doctor?.specialisation}) or switch to a specialist.
                             </>
                           )}
                         </p>

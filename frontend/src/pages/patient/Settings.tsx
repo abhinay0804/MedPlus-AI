@@ -191,7 +191,7 @@ export const PatientSettings: React.FC = () => {
 
             <div className="flex flex-wrap items-center gap-2">
               <a
-                href="mailto:abhinaychowdhary97@gmail.com?subject=MedPlus%20AI%20-%20Let%27s%20Connect&body=Hi%20Abhinay,%0D%0A%0D%0AI%20would%20love%20to%20discuss%20the%20project%20with%20you.%20When%20are%20you%20free%20to%20connect%20for%20a%20quick%20discussion%3F%0D%0A%0D%0ABest%20regards,"
+                href="mailto:abhinaychowdhary97@gmail.com?subject=MedPulse%20AI%20-%20Let%27s%20Connect&body=Hi%20Abhinay,%0D%0A%0D%0AI%20would%20love%20to%20discuss%20the%20project%20with%20you.%20When%20are%20you%20free%20to%20connect%20for%20a%20quick%20discussion%3F%0D%0A%0D%0ABest%20regards,"
                 className="flex items-center space-x-1.5 px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-750 dark:text-slate-200 rounded-lg text-xs font-bold transition-colors cursor-pointer border border-slate-200 dark:border-slate-700"
               >
                 <Mail className="w-3.5 h-3.5" />

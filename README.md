@@ -77,7 +77,7 @@
 
 ### 📄 Watermarked PDF Prescriptions
 - **ReportLab Canvas**: Generates styled prescription tickets with patient info, doctor details, symptoms, clinical notes, AI care guidelines, and dosage tables.
-- **Diagonal Watermark**: `"MEDPLUS AI"` rendered at 45° angle with `setFillAlpha(0.06)` transparency.
+- **Diagonal Watermark**: `"MEDPULSE AI"` rendered at 45° angle with `setFillAlpha(0.06)` transparency.
 - **3-Column Verification Block**: Digital verification (OTP check), handwritten fields (Person Name / Signature / Stamp), and consulting physician signature line.
 
 ### 🔔 Real-Time Multi-Channel Notifications
@@ -176,7 +176,7 @@ graph TB
 ## 📂 Project Structure
 
 ```
-MedPlus-AI/
+MedPulse-AI/
 ├── server/
 │   ├── app.py                    # FastAPI application entry, lifespan, middleware, routers
 │   ├── auth.py                   # JWT tokens, bcrypt hashing, RBAC dependencies

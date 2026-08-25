@@ -794,7 +794,7 @@ def generate_prescription_pdf(appt) -> bytes:
         # Center coordinates for Letter size page: (306, 396)
         canvas.translate(306, 396)
         canvas.rotate(45)  # Rotate diagonal y=x line
-        canvas.drawCentredString(0, 0, "MEDPLUS AI")
+        canvas.drawCentredString(0, 0, "MEDPULSE AI")
         canvas.restoreState()
 
         # Draw footer
