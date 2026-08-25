@@ -10,6 +10,15 @@ from server.config import settings
 from server.database.models import EmailOTP
 from server.services.email_service import send_email, is_smtp_configured
 
+def safe_dispatch(task_func, *args, **kwargs):
+    """Safely dispatch Celery task without raising 500 or blocking if Redis/Celery is offline."""
+    import logging
+    logger = logging.getLogger(__name__)
+    try:
+        task_func.apply_async(args=args, kwargs=kwargs, retry=False)
+    except Exception as e:
+        logger.info(f"[Celery Dispatch] Redis offline, task {getattr(task_func, '__name__', 'task')} skipped: {e}")
+
 async def generate_and_send_otp(
     db: AsyncSession,
     email: str,
@@ -23,20 +32,23 @@ async def generate_and_send_otp(
     stmt_prev = select(EmailOTP).where(
         EmailOTP.email == clean_email,
         EmailOTP.purpose == purpose
-    ).order_by(EmailOTP.created_at.desc())
+    ).order_by(EmailOTP.created_at.desc()).limit(1)
+
     res_prev = await db.execute(stmt_prev)
-    prev_otps = res_prev.scalars().all()
+    prev_otp = res_prev.scalar_one_or_none()
+    # 2. Invalidate all existing active OTP codes for this specific email and purpose
+    from sqlalchemy import update
+    stmt_invalidate = update(EmailOTP).where(
+        EmailOTP.email == clean_email,
+        EmailOTP.purpose == purpose,
+        EmailOTP.is_used == False
+    ).values(is_used=True)
+    await db.execute(stmt_invalidate)
 
-    prev_code = prev_otps[0].otp_code if prev_otps else None
-
-    # Invalidate all prior unverified OTPs for this email & purpose
-    for old_otp in prev_otps:
-        if not old_otp.is_used:
-            old_otp.is_used = True
-
-    # 2. Generate new distinct 6-digit code
+    # 3. Generate a cryptographically secure 6-digit verification code
+    # Ensure it's not the same as the immediately preceding OTP
     otp_code = f"{random.randint(100000, 999999)}"
-    while prev_code and otp_code == prev_code:
+    while prev_otp and prev_otp.otp_code == otp_code:
         otp_code = f"{random.randint(100000, 999999)}"
 
     expires_at = datetime.utcnow() + timedelta(minutes=10)
@@ -53,19 +65,19 @@ async def generate_and_send_otp(
 
     is_sim = not is_smtp_configured()
 
-    # Send HTML OTP Email via Email Service
-    sent = await send_email(
-        to_email=clean_email,
-        subject=f"MedPulse AI — {purpose} Security Verification OTP ({otp_code})",
-        template_name="otp_email.html",
-        context={
+    # Send HTML OTP Email via Celery Background Task
+    from microservices.tasks import send_email_task
+    safe_dispatch(
+        send_email_task,
+        clean_email,
+        f"MedPulse AI — {purpose} Security Verification OTP ({otp_code})",
+        "otp_email",
+        {
             "name": full_name,
             "otp_code": otp_code,
             "purpose": purpose
         }
     )
-    if not sent:
-        logger.warning(f"Failed to dispatch OTP email to {clean_email}, logged in simulation mode.")
 
     return otp_code, is_sim
 
