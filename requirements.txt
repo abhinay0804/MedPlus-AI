@@ -16,3 +16,6 @@ pydantic-settings>=2.2.0
 python-multipart>=0.0.9
 websockets>=12.0
 slowapi>=0.1.9
+gunicorn>=22.0.0
+psycopg2-binary>=2.9.9
+reportlab>=4.0.0

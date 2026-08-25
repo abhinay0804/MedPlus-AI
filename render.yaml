@@ -1,0 +1,129 @@
+# Render Blueprint — MedPulse AI
+# Deploy: Dashboard → New → Blueprint → Connect GitHub repo → Select this file
+# Docs: https://render.com/docs/blueprint-spec
+
+databases:
+  - name: medpulse-db
+    plan: free
+    databaseName: medpulse
+    user: medpulse_user
+
+services:
+  # ─────────────────────────────────────────────
+  # 1. FastAPI Backend (Web Service)
+  # ─────────────────────────────────────────────
+  - type: web
+    name: medpulse-api
+    runtime: python
+    plan: free
+    buildCommand: |
+      pip install -r requirements.txt
+      pip install gunicorn psycopg2-binary
+    startCommand: gunicorn server.app:app --workers 2 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT --timeout 120
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHONPATH
+        value: .
+      - key: ENVIRONMENT
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: medpulse-db
+          property: connectionString
+        # Render provides postgres:// but SQLAlchemy needs postgresql+asyncpg://
+        # We handle this in the build script
+      - key: REDIS_URL
+        fromService:
+          name: medpulse-redis
+          type: redis
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: FRONTEND_URL
+        value: https://medpulse-ai.onrender.com
+      - key: GOOGLE_GENAI_API_KEY
+        sync: false  # Set manually in dashboard
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_REDIRECT_URI
+        value: https://medpulse-api.onrender.com/api/auth/google/callback
+
+  # ─────────────────────────────────────────────
+  # 2. Celery Worker + Beat (Background Worker)
+  # ─────────────────────────────────────────────
+  - type: worker
+    name: medpulse-worker
+    runtime: python
+    plan: free
+    buildCommand: |
+      pip install -r requirements.txt
+      pip install psycopg2-binary
+    startCommand: celery -A microservices.celery_app worker --beat --loglevel=info --concurrency=2
+    envVars:
+      - key: PYTHONPATH
+        value: .
+      - key: ENVIRONMENT
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: medpulse-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          name: medpulse-redis
+          type: redis
+          property: connectionString
+      - key: JWT_SECRET
+        sync: false
+      - key: JWT_REFRESH_SECRET
+        sync: false
+      - key: GOOGLE_GENAI_API_KEY
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+
+  # ─────────────────────────────────────────────
+  # 3. React Frontend (Static Site)
+  # ─────────────────────────────────────────────
+  - type: web
+    name: medpulse-ai
+    runtime: static
+    plan: free
+    buildCommand: cd frontend && npm install && npm run build
+    staticPublishPath: frontend/dist
+    headers:
+      - path: /*
+        name: X-Frame-Options
+        value: DENY
+    routes:
+      - type: rewrite
+        source: /api/*
+        destination: https://medpulse-api.onrender.com/api/*
+      - type: rewrite
+        source: /ws/*
+        destination: https://medpulse-api.onrender.com/ws/*
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_API_URL
+        value: https://medpulse-api.onrender.com/api
+
+  # ─────────────────────────────────────────────
+  # 4. Redis (Managed)
+  # ─────────────────────────────────────────────
+  - type: redis
+    name: medpulse-redis
+    plan: free
+    maxmemoryPolicy: allkeys-lru
+    ipAllowList: []  # Allow all (internal Render network)
