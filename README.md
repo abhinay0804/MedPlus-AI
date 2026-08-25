@@ -29,8 +29,8 @@
 - [Project Structure](#-project-structure)
 - [Local Development Setup](#-local-development-setup)
 - [Environment Configuration (.env)](#-environment-configuration-env)
-- [API Endpoint Reference (73 Endpoints)](#-api-endpoint-reference-73-endpoints)
-- [Database Schema (15 Models)](#-database-schema--architecture-15-models)
+- [API Endpoint Reference (80 Endpoints)](#-api-endpoint-reference-80-endpoints)
+- [Database Schema (16 Models)](#-database-schema--architecture-16-models)
 - [Core LLM Prompts & Structured Outputs](#-core-llm-prompts--structured-outputs)
 - [Google Calendar OAuth 2.0 Setup](#-google-calendar-oauth-20-integration-setup)
 - [System Design Write-up](#-system-design-write-up)
@@ -47,7 +47,7 @@
 - **5-Minute Slot Hold TTL**: Patients get a temporary lock while completing intake forms — expired holds are auto-released by a Celery Beat sweeper every 60 seconds.
 - **Patient Overlap Guard**: Blocks patients from confirming overlapping appointments across different doctors.
 
-### 🤖 Google Gemini AI Integration (8 AI Pipelines)
+### 🤖 Google Gemini AI Integration (9 AI Pipelines)
 | Pipeline | Trigger | Output | Target End |
 |---|---|---|---|
 | **Pre-Visit Symptom Triage** | Patient submits symptoms | Urgency level (`LOW`/`MEDIUM`/`HIGH`), chief complaint, key symptoms, red flags, suggested questions | Patient & Doctor |
@@ -58,6 +58,7 @@
 | **Leave Approval Recommendation** | Admin reviews leave request | AI recommendation (`APPROVE`/`REJECT`/`CAUTION`) with operational reasoning | Admin |
 | **Hospital Operations Insights** | Admin requests analytics | Chief Medical Officer briefing: staffing bottlenecks, peak hours, capacity utilization | Admin |
 | **Doctor Performance Analysis** | Admin views doctor profile | Appraisal summary, strengths list, improvement areas, and actionable practice suggestions | Admin |
+| **Customer Support AI Chatbot** | Patient submits support message | Context-aware responses lookup (patient appointments, specialist list, suspension rules) | Patient |
 
 - **Model Fallback Cascade**: `gemini-3.6-flash` → `gemini-3.5-flash` → `gemini-3.5-flash-lite` with 3 exponential retries.
 - **Zero-Downtime Offline Fallbacks**: Local NLP rule engines execute in <1ms when API keys are exhausted.
@@ -354,7 +355,7 @@ ENVIRONMENT=development
 
 ---
 
-## 📡 API Endpoint Reference (73 Endpoints)
+## 📡 API Endpoint Reference (80 Endpoints)
 
 ### Authentication (`/api/auth`) — 14 Endpoints
 
@@ -375,7 +376,7 @@ ENVIRONMENT=development
 | `PUT` | `/auth/notifications/{id}/read` | Any | Mark notification as read |
 | `PUT` | `/auth/notifications/read-all` | Any | Mark all notifications as read |
 
-### Patient Portal (`/api/patient`) — 13 Endpoints
+### Patient Portal (`/api/patient`) — 17 Endpoints
 
 | Method | Path | Auth | Description |
 |---|---|---|---|
@@ -392,6 +393,10 @@ ENVIRONMENT=development
 | `GET` | `/patient/appointments/{id}` | Patient | Full detail with AI summaries + post-visit notes |
 | `POST` | `/patient/appointments/{id}/review` | Patient | Submit 1-5 star rating + comment |
 | `GET` | `/patient/appointments/{id}/pdf` | Patient/Admin | Download watermarked prescription PDF |
+| `POST` | `/patient/support/tickets` | Patient | Submit customer support or billing enquiry ticket |
+| `GET` | `/patient/support/tickets` | Patient | List patient's submitted support ticket history |
+| `PUT` | `/patient/support/tickets/{id}/rate` | Patient | Submit 1-5 star rating and comment on resolved ticket |
+| `POST` | `/patient/support/chat` | Patient | Context-aware Gemini AI clinic support chatbot assistant |
 
 ### Doctor Portal (`/api/doctor`) — 19 Endpoints
 
@@ -417,7 +422,7 @@ ENVIRONMENT=development
 | `PUT` | `/doctor/notes/{id}/read` | Doctor | Mark directive as read |
 | `GET` | `/doctor/analytics` | Doctor | Practice metrics, trends, urgency distribution, heatmap |
 
-### Admin Operations (`/api/admin`) — 25 Endpoints
+### Admin Operations (`/api/admin`) — 28 Endpoints
 
 | Method | Path | Auth | Description |
 |---|---|---|---|
@@ -446,6 +451,9 @@ ENVIRONMENT=development
 | `GET` | `/admin/appointments` | Admin | All-clinic appointment command center |
 | `GET` | `/admin/appointments/{id}/available-doctors` | Admin | Conflict-free replacement doctors for reassignment |
 | `POST` | `/admin/appointments/{id}/reassign` | Admin | Reassign to another doctor + 3 emails + 3 notifications |
+| `GET` | `/admin/support/tickets` | Admin | List all support tickets submitted by patients (filterable) |
+| `GET` | `/admin/support/patients/{patient_id}/tickets` | Admin | Fetch support tickets submitted by a specific patient |
+| `PUT` | `/admin/support/tickets/{ticket_id}/respond` | Admin | Reply to support ticket, set status (RESOLVED/IN_PROGRESS) |
 
 ### System (`/api` & WebSocket) — 2 Endpoints
 
@@ -456,7 +464,7 @@ ENVIRONMENT=development
 
 ---
 
-## 🗄️ Database Schema & Architecture (15 Models)
+## 🗄️ Database Schema & Architecture (16 Models)
 
 ### Core Tables
 
@@ -528,6 +536,7 @@ ENVIRONMENT=development
 | 13 | `email_otps` | 6-digit OTP codes with 10-minute expiry |
 | 14 | `admin_notes` | Priority directives (URGENT/IMPORTANT/ROUTINE) |
 | 15 | `in_app_notifications` | Notification bell feed entries |
+| 16 | `support_tickets` | Customer support enquiries with status, category, resolution, and ratings |
 
 ---
 
