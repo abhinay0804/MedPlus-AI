@@ -10,6 +10,27 @@ from server.database import models as _models  # Ensure all ORM models are regis
 from server.routes import auth_routes, admin_routes, patient_routes, doctor_routes
 from server.websocket import ws_router, redis_subscriber
 
+async def auto_migrate_schema(conn):
+    from sqlalchemy import text
+    columns = [
+        ("appointments", "doctor_joined", "BOOLEAN DEFAULT FALSE"),
+        ("appointments", "patient_joined", "BOOLEAN DEFAULT FALSE"),
+        ("appointments", "unattended_by", "VARCHAR(20)"),
+        ("appointments", "cancel_reason", "VARCHAR(255)"),
+        ("users", "unattended_count", "INTEGER DEFAULT 0"),
+        ("doctor_profiles", "unattended_count", "INTEGER DEFAULT 0")
+    ]
+    for table, col, col_type in columns:
+        try:
+            await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {col_type}"))
+            print(f"✅ Auto-migrated: added column {col} to table {table}")
+        except Exception as e:
+            err_str = str(e).lower()
+            if "already exists" in err_str or "duplicate column" in err_str or "duplicate column name" in err_str:
+                pass
+            else:
+                print(f"⚠️ Auto-migration info: {table}.{col} not added: {e}")
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     import asyncio
@@ -18,6 +39,7 @@ async def lifespan(app: FastAPI):
         try:
             async with engine.begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)
+                await auto_migrate_schema(conn)
             print("✅ Database tables ready.")
             break
         except Exception as e:
