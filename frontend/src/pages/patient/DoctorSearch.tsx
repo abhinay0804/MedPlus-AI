@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { Layout } from '../../components/Layout'
 import { api } from '../../lib/api'
-import { DoctorProfile } from '../../types'
+import { DoctorProfile, Appointment } from '../../types'
 import { Stethoscope, Search, Calendar, Clock, ChevronRight, Filter, X } from 'lucide-react'
 import { SkeletonCard } from '../../components/SkeletonLoader'
 import { PendingBookingBanner } from '../../components/PendingBookingBanner'
@@ -19,22 +19,46 @@ const SPECIALISATIONS = [
 
 export const DoctorSearch: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams()
-  const urlSpec = searchParams.get('specialisation') || ''
-  const urlName = searchParams.get('search') || ''
+  const rescheduleAppointmentId = searchParams.get('reschedule_appointment_id')
 
+  const [rescheduleSpecialty, setRescheduleSpecialty] = useState<string | null>(null)
   const [doctors, setDoctors] = useState<DoctorProfile[]>([])
-  const [specialisation, setSpecialisation] = useState<string>(urlSpec)
-  const [searchName, setSearchName] = useState<string>(urlName)
+  const [specialisation, setSpecialisation] = useState<string>('')
+  const [searchName, setSearchName] = useState<string>('')
   const [isLoading, setIsLoading] = useState(true)
 
-  // Sync state when URL params change
+  // Fetch reschedule appointment details to enforce specialty consistency
   useEffect(() => {
-    const spec = searchParams.get('specialisation') || ''
+    const fetchRescheduleSpec = async () => {
+      if (!rescheduleAppointmentId) {
+        setRescheduleSpecialty(null)
+        return
+      }
+      try {
+        const appt = await api.get<Appointment>(`/patient/appointments/${rescheduleAppointmentId}`)
+        if (appt && appt.doctor && appt.doctor.specialisation) {
+          setRescheduleSpecialty(appt.doctor.specialisation)
+        }
+      } catch (err) {
+        console.error('Failed to load reschedule appointment details:', err)
+      }
+    }
+    fetchRescheduleSpec()
+  }, [rescheduleAppointmentId])
+
+  // Sync state when URL params or rescheduleSpecialty change
+  useEffect(() => {
+    let spec = searchParams.get('specialisation') || ''
     const search = searchParams.get('search') || ''
+
+    if (rescheduleSpecialty) {
+      spec = rescheduleSpecialty
+    }
+
     setSpecialisation(spec)
     setSearchName(search)
     fetchDoctors(spec, search)
-  }, [searchParams])
+  }, [searchParams, rescheduleSpecialty])
 
   const fetchDoctors = async (spec?: string, search?: string) => {
     setIsLoading(true)
@@ -63,6 +87,9 @@ export const DoctorSearch: React.FC = () => {
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()
     const newParams: Record<string, string> = {}
+    if (rescheduleAppointmentId) {
+      newParams.reschedule_appointment_id = rescheduleAppointmentId
+    }
     if (specialisation && specialisation !== 'All Specialisations') {
       newParams.specialisation = specialisation
     }
@@ -73,9 +100,16 @@ export const DoctorSearch: React.FC = () => {
   }
 
   const clearFilters = () => {
-    setSpecialisation('')
+    setSpecialisation(rescheduleSpecialty || '')
     setSearchName('')
-    setSearchParams({})
+    const newParams: Record<string, string> = {}
+    if (rescheduleAppointmentId) {
+      newParams.reschedule_appointment_id = rescheduleAppointmentId
+    }
+    if (rescheduleSpecialty) {
+      newParams.specialisation = rescheduleSpecialty
+    }
+    setSearchParams(newParams)
   }
 
   // Client-side filtering as backup
@@ -136,22 +170,32 @@ export const DoctorSearch: React.FC = () => {
           <div className="relative md:col-span-4">
             <Filter className="w-4 h-4 absolute left-3.5 top-3.5 text-slate-400 dark:text-slate-500" />
             <select
+              disabled={Boolean(rescheduleSpecialty)}
               value={specialisation || 'All Specialisations'}
               onChange={(e) => {
                 const val = e.target.value
                 setSpecialisation(val)
                 const newParams: Record<string, string> = {}
+                if (rescheduleAppointmentId) newParams.reschedule_appointment_id = rescheduleAppointmentId
                 if (val && val !== 'All Specialisations') newParams.specialisation = val
                 if (searchName.trim()) newParams.search = searchName.trim()
                 setSearchParams(newParams)
               }}
-              className="w-full pl-10 pr-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-teal-500/50 rounded-xl text-slate-900 dark:text-white focus:outline-none focus:border-teal-500 text-sm cursor-pointer"
+              className={`w-full pl-10 pr-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white focus:outline-none focus:border-teal-500 text-sm ${
+                rescheduleSpecialty
+                  ? 'bg-slate-100 dark:bg-slate-800/80 cursor-not-allowed opacity-75'
+                  : 'bg-slate-50 dark:bg-slate-800 hover:border-teal-500/50 cursor-pointer'
+              }`}
             >
-              {SPECIALISATIONS.map((spec) => (
-                <option key={spec} value={spec} className="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">
-                  {spec}
-                </option>
-              ))}
+              {rescheduleSpecialty ? (
+                <option value={rescheduleSpecialty}>{rescheduleSpecialty} (Locked)</option>
+              ) : (
+                SPECIALISATIONS.map((spec) => (
+                  <option key={spec} value={spec} className="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">
+                    {spec}
+                  </option>
+                ))
+              )}
             </select>
           </div>
 

@@ -483,6 +483,15 @@ async def reschedule_slot(
 
     target_doctor_id = new_doctor_id or old_appt.doctor_id
 
+    # Verify specialty consistency for reassignments/rescheduling
+    from server.database.models import DoctorProfile
+    old_doc = await db.get(DoctorProfile, old_appt.doctor_id)
+    new_doc = await db.get(DoctorProfile, target_doctor_id)
+    if old_doc and new_doc and old_doc.specialisation != new_doc.specialisation:
+        raise SlotConflictError(
+            f"Cannot reschedule appointment across specialties. Original: {old_doc.specialisation}, Selected: {new_doc.specialisation}"
+        )
+
     # Hold the new slot (raises SlotConflictError if taken)
     new_appt = await hold_slot(
         db=db,
