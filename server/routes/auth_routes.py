@@ -281,6 +281,8 @@ async def google_connect(
     netloc = request.url.netloc
     if "127.0.0.1" in netloc:
         netloc = netloc.replace("127.0.0.1", "localhost")
+    if "localhost" not in netloc:
+        scheme = "https"
     redirect_uri = f"{scheme}://{netloc}/api/auth/google/callback"
 
     # Encode state with user identity to authenticate browser redirects securely
@@ -317,7 +319,10 @@ async def google_connect(
     except Exception as e:
         import logging
         logging.getLogger(__name__).error(f"[CalendarService] Error generating OAuth URL: {e}")
-        return {"url": None, "message": "Failed to generate Google OAuth URL."}
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate Google OAuth URL: {str(e)}"
+        )
 
 
 @router.get("/google/callback")
@@ -353,6 +358,8 @@ async def google_callback(
     netloc = request.url.netloc
     if "127.0.0.1" in netloc:
         netloc = netloc.replace("127.0.0.1", "localhost")
+    if "localhost" not in netloc:
+        scheme = "https"
     redirect_uri = f"{scheme}://{netloc}/api/auth/google/callback"
 
     from server.services.calendar_service import exchange_code_for_tokens
