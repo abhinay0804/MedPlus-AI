@@ -530,12 +530,13 @@ def retry_failed_emails_task():
     async def _run():
         from sqlalchemy import select, outerjoin
         from sqlalchemy.orm import selectinload
-        from server.database.models import Appointment, AppointmentStatus, CalendarEvent
+        from server.database.models import Appointment, AppointmentStatus, CalendarEvent, User
 
         async with AsyncSessionLocal() as db:
             # Find CONFIRMED appointments with no CalendarEvent (sync chain likely failed)
             result = await db.execute(
                 select(Appointment)
+                .join(User, Appointment.patient_id == User.id)
                 .outerjoin(Appointment.calendar_event)
                 .options(
                     selectinload(Appointment.patient),
@@ -543,6 +544,7 @@ def retry_failed_emails_task():
                 .where(
                     Appointment.status == AppointmentStatus.CONFIRMED,
                     CalendarEvent.id == None,  # noqa: E711 — SQLAlchemy IS NULL check
+                    User.has_google_calendar == True
                 )
             )
             orphaned = result.scalars().all()
