@@ -72,9 +72,22 @@ class AppointmentResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class DoctorReviewResponse(BaseModel):
+    id: str
+    appointment_id: str
+    patient_id: str
+    doctor_id: str
+    rating: int
+    comment: Optional[str] = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class AppointmentDetailResponse(AppointmentResponse):
-    """Full detail view with nested doctor, patient, summaries."""
+    """Full detail view with nested doctor, patient, summaries, and review."""
     doctor: Optional[DoctorResponse] = None
     patient: Optional[UserResponse] = None
     symptom_form: Optional[SymptomFormResponse] = None
     post_visit_note: Optional[PostVisitNoteResponse] = None
+    review: Optional[DoctorReviewResponse] = None

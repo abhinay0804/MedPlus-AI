@@ -22,6 +22,7 @@ class AppointmentRepository:
                 selectinload(Appointment.patient),
                 selectinload(Appointment.symptom_form),
                 selectinload(Appointment.post_visit_note),
+                selectinload(Appointment.review),
             )
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
@@ -39,6 +40,7 @@ class AppointmentRepository:
                 selectinload(Appointment.doctor).selectinload(DoctorProfile.user),
                 selectinload(Appointment.symptom_form),
                 selectinload(Appointment.post_visit_note),
+                selectinload(Appointment.review),
             )
             .where(Appointment.patient_id == patient_id)
         )
@@ -76,6 +78,7 @@ class AppointmentRepository:
                 selectinload(Appointment.symptom_form),
                 selectinload(Appointment.post_visit_note),
                 selectinload(Appointment.doctor).selectinload(DoctorProfile.user),
+                selectinload(Appointment.review),
             )
             .where(Appointment.doctor_id == doctor_id)
         )
