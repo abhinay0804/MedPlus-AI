@@ -79,6 +79,8 @@ origins = [
     "http://127.0.0.1:3000",
     # Render production URLs
     "https://medpulse-ai-yroh.onrender.com",
+    "https://medplus-ai-yroh.onrender.com",
+    "https://medplus-web-yroh.onrender.com",
     "https://medpulse-api-mtje.onrender.com",
 ]
 
