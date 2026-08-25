@@ -115,6 +115,14 @@ export const Appointments: React.FC = () => {
     }
   }
 
+  const isTodayOrPast = (dateStr: string) => {
+    const slotDate = new Date(dateStr + 'Z')
+    const now = new Date()
+    const slotDay = new Date(slotDate.getFullYear(), slotDate.getMonth(), slotDate.getDate())
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    return slotDay.getTime() <= today.getTime()
+  }
+
   const getStatusStyle = (status: string) => {
     switch (status) {
       case 'CONFIRMED':
@@ -266,7 +274,7 @@ export const Appointments: React.FC = () => {
                               ? 'UNATTENDED'
                               : appt.status.replace('_', ' ')}
                           </span>
-                          {appt.status === 'CONFIRMED' && !appt.is_started && (
+                          {appt.status === 'CONFIRMED' && !appt.is_started && isTodayOrPast(appt.slot_start) && (
                             <div className="flex flex-col space-y-0.5 text-[9px] text-slate-500 font-semibold leading-normal pt-1">
                               <div>Doc check-in: <span className={appt.doctor_joined ? 'text-teal-600 font-bold' : 'text-rose-500'}>{appt.doctor_joined ? 'Joined' : 'Absent'}</span></div>
                               <div>Pat check-in: <span className={appt.patient_joined ? 'text-teal-600 font-bold' : 'text-rose-500'}>{appt.patient_joined ? 'Joined' : 'Absent'}</span></div>
