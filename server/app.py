@@ -76,8 +76,8 @@ origins = [
     "http://127.0.0.1:5173",
     "http://127.0.0.1:3000",
     # Render production URLs
-    "https://medpulse-ai.onrender.com",
-    "https://medpulse-api.onrender.com",
+    "https://medpulse-ai-yroh.onrender.com",
+    "https://medpulse-api-mtje.onrender.com",
 ]
 
 app.add_middleware(

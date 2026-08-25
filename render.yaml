@@ -40,7 +40,7 @@ services:
       - key: JWT_REFRESH_SECRET
         generateValue: true
       - key: FRONTEND_URL
-        value: https://medpulse-ai.onrender.com
+        value: https://medpulse-ai-yroh.onrender.com
       - key: GOOGLE_GENAI_API_KEY
         sync: false
       - key: SMTP_USER
@@ -52,7 +52,7 @@ services:
       - key: GOOGLE_CLIENT_SECRET
         sync: false
       - key: GOOGLE_REDIRECT_URI
-        value: https://medpulse-api.onrender.com/api/auth/google/callback
+        value: https://medpulse-api-mtje.onrender.com/api/auth/google/callback
 
   # ─────────────────────────────────────────────
   # 2. React Frontend (Static Site)
@@ -69,16 +69,16 @@ services:
     routes:
       - type: rewrite
         source: /api/*
-        destination: https://medpulse-api.onrender.com/api/*
+        destination: https://medpulse-api-mtje.onrender.com/api/*
       - type: rewrite
         source: /ws/*
-        destination: https://medpulse-api.onrender.com/ws/*
+        destination: https://medpulse-api-mtje.onrender.com/ws/*
       - type: rewrite
         source: /*
         destination: /index.html
     envVars:
       - key: VITE_API_URL
-        value: https://medpulse-api.onrender.com/api
+        value: https://medpulse-api-mtje.onrender.com/api
 
   # ─────────────────────────────────────────────
   # 3. Redis (Managed Key-Value Store)
