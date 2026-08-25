@@ -11,7 +11,7 @@ interface ForgotPasswordModalProps {
 }
 
 export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({ isOpen, onClose }) => {
-  const [step, setStep] = useState<1 | 2>(1)
+  const [step, setStep] = useState<1 | 2 | 3>(1)
   const [email, setEmail] = useState('')
   const [otpCode, setOtpCode] = useState('')
   const [newPassword, setNewPassword] = useState('')
@@ -45,8 +45,35 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({ isOpen
       setStep(2)
       setResendTimer(30)
       setSuccessMsg('No cap, if you have an account with us, a reset OTP code has already landed in your mailbox.')
+      setTimeout(() => setSuccessMsg(null), 5000)
     } catch (err: any) {
       setError(err.message || 'Failed to request password reset OTP.')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  const handleVerifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setError(null)
+
+    if (otpCode.length !== 6) {
+      setError('Please enter a valid 6-digit OTP code.')
+      return
+    }
+
+    setIsSubmitting(true)
+    try {
+      await api.post('/auth/verify-otp', {
+        email,
+        otp_code: otpCode,
+        purpose: 'Password Reset',
+      })
+      setStep(3)
+      setSuccessMsg('OTP verified successfully! Please choose your new password.')
+      setTimeout(() => setSuccessMsg(null), 4000)
+    } catch (err: any) {
+      setError(err.message || 'Verification failed. Please check your OTP code.')
     } finally {
       setIsSubmitting(false)
     }
@@ -55,11 +82,6 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({ isOpen
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
-
-    if (otpCode.length !== 6) {
-      setError('Please enter a valid 6-digit OTP code.')
-      return
-    }
 
     if (!isPasswordStrong(newPassword)) {
       setError('Please ensure your new password satisfies all strong password requirements.')
@@ -78,7 +100,7 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({ isOpen
         onClose()
       }, 2000)
     } catch (err: any) {
-      setError(err.message || 'Failed to reset password. Please verify your OTP code.')
+      setError(err.message || 'Failed to reset password.')
     } finally {
       setIsSubmitting(false)
     }
@@ -100,7 +122,11 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({ isOpen
           </div>
           <div>
             <h3 className="text-lg font-bold text-slate-900 dark:text-white">Reset Password</h3>
-            <p className="text-xs text-slate-500">Email OTP verification & password recovery</p>
+            <p className="text-xs text-slate-500">
+              {step === 1 && 'Enter your email to request recovery OTP'}
+              {step === 2 && 'Verify the 6-digit code sent to your email'}
+              {step === 3 && 'Set a new secure password for your account'}
+            </p>
           </div>
         </div>
 
@@ -118,7 +144,7 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({ isOpen
           </div>
         )}
 
-        {step === 1 ? (
+        {step === 1 && (
           <form onSubmit={handleRequestOtp} className="space-y-4">
             <div>
               <label className="block text-xs font-semibold uppercase text-slate-700 dark:text-slate-300 mb-1.5">
@@ -152,8 +178,10 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({ isOpen
               )}
             </button>
           </form>
-        ) : (
-          <form onSubmit={handleResetPassword} className="space-y-4">
+        )}
+
+        {step === 2 && (
+          <form onSubmit={handleVerifyOtp} className="space-y-4">
             <div>
               <label className="block text-xs font-semibold uppercase text-slate-700 dark:text-slate-300 mb-1.5">
                 6-Digit Email OTP Code
@@ -192,6 +220,25 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({ isOpen
               </div>
             </div>
 
+            <button
+              type="submit"
+              disabled={isSubmitting || otpCode.length !== 6}
+              className="w-full py-3 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl text-sm shadow-lg shadow-amber-500/25 flex items-center justify-center space-x-2 transition disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+            >
+              {isSubmitting ? (
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <>
+                  <span>Verify OTP Code</span>
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              )}
+            </button>
+          </form>
+        )}
+
+        {step === 3 && (
+          <form onSubmit={handleResetPassword} className="space-y-4">
             <div>
               <label className="block text-xs font-semibold uppercase text-slate-700 dark:text-slate-300 mb-1.5">
                 New Strong Password
@@ -220,14 +267,14 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({ isOpen
 
             <button
               type="submit"
-              disabled={isSubmitting || otpCode.length !== 6 || !isPasswordStrong(newPassword)}
+              disabled={isSubmitting || !isPasswordStrong(newPassword)}
               className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-sm shadow-lg shadow-emerald-600/25 flex items-center justify-center space-x-2 transition disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
             >
               {isSubmitting ? (
                 <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
               ) : (
                 <>
-                  <span>Verify OTP & Save New Password</span>
+                  <span>Save New Password</span>
                   <CheckCircle2 className="w-4 h-4" />
                 </>
               )}
