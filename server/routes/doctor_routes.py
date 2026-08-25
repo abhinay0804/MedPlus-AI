@@ -962,3 +962,29 @@ async def get_doctor_analytics(
         "urgency_data": urgency_data,
         "heatmap_data": heatmap_data
     }
+
+
+@router.post("/appointments/{appointment_id}/join", response_model=dict, dependencies=[doctor_guard])
+async def doctor_join_appointment(
+    appointment_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Mark that the doctor has joined/checked-in to the appointment."""
+    doc_repo = DoctorRepository(db)
+    profile = await doc_repo.get_by_user_id(current_user.id)
+    if not profile:
+        raise NotFoundError("Doctor profile not found")
+        
+    repo = AppointmentRepository(db)
+    appt = await repo.get_by_id(appointment_id)
+    if not appt:
+        raise NotFoundError("Appointment not found")
+    if appt.doctor_id != profile.id:
+        raise HTTPException(status_code=403, detail="Not your appointment")
+    
+    if not appt.doctor_joined:
+        appt.doctor_joined = True
+        await db.commit()
+        
+    return {"success": True, "message": "Checked in successfully"}

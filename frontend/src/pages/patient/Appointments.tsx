@@ -208,6 +208,9 @@ export const Appointments: React.FC = () => {
       case 'COMPLETED':
         return <span className="px-3 py-1 bg-sky-500/10 text-sky-400 border border-sky-500/30 rounded-full text-xs font-bold">COMPLETED</span>
       case 'CANCELLED':
+        if (appt.cancel_reason === 'unattended') {
+          return <span className="px-3 py-1 bg-slate-100 dark:bg-slate-800/40 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800 rounded-full text-xs font-bold">UNATTENDED</span>
+        }
         return <span className="px-3 py-1 bg-rose-500/10 text-rose-400 border border-rose-500/30 rounded-full text-xs font-bold">CANCELLED</span>
       case 'RESCHEDULED':
         return <span className="px-3 py-1 bg-purple-500/10 text-purple-400 border border-purple-500/30 rounded-full text-xs font-bold">RESCHEDULED</span>

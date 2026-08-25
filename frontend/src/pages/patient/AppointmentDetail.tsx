@@ -76,6 +76,21 @@ export const AppointmentDetail: React.FC = () => {
     fetchDetail()
   }, [fetchDetail])
 
+  // Auto check-in patient when viewing a confirmed appointment
+  useEffect(() => {
+    async function checkIn() {
+      if (id && appointment && appointment.status === 'CONFIRMED' && !appointment.is_started && !appointment.patient_joined) {
+        try {
+          await api.post(`/patient/appointments/${id}/join`, {})
+          setAppointment(prev => prev ? { ...prev, patient_joined: true } : null)
+        } catch (err) {
+          console.error('Failed to auto check-in patient:', err)
+        }
+      }
+    }
+    checkIn()
+  }, [id, appointment?.status, appointment?.is_started, appointment?.patient_joined])
+
   // Real-time WebSocket hook: auto-refreshes appointment detail when Celery completes AI summary
   useWebSocket(id, (wsData) => {
     if (
@@ -210,15 +225,23 @@ export const AppointmentDetail: React.FC = () => {
                   ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-300 border-indigo-200 dark:border-indigo-500/30 animate-pulse'
                   : appointment.status === 'COMPLETED'
                   ? 'bg-teal-50 dark:bg-teal-500/10 text-teal-600 dark:text-teal-300 border-teal-200 dark:border-teal-500/30'
+                  : appointment.status === 'CANCELLED' && appointment.cancel_reason === 'unattended'
+                  ? 'bg-slate-100 dark:bg-slate-800/40 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800'
                   : appointment.status === 'CANCELLED'
                   ? 'bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-300 border-rose-200 dark:border-rose-500/30'
                   : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
               }`}>
-                STATUS: {appointment.is_started && appointment.status === 'CONFIRMED' ? 'IN PROGRESS' : appointment.status}
+                STATUS: {
+                  appointment.is_started && appointment.status === 'CONFIRMED'
+                    ? 'IN PROGRESS'
+                    : appointment.status === 'CANCELLED' && appointment.cancel_reason === 'unattended'
+                    ? 'UNATTENDED'
+                    : appointment.status
+                }
               </span>
             </div>
           </div>
-
+ 
           {/* Timestamps Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs text-slate-700 dark:text-slate-300">
             <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-200 dark:border-slate-700/40 space-y-1">
@@ -228,7 +251,7 @@ export const AppointmentDetail: React.FC = () => {
                 <span>{bookedTimeStr}</span>
               </div>
             </div>
-
+ 
             <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-200 dark:border-slate-700/40 space-y-1 sm:col-span-2">
               <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Consultation Slot Window</span>
               <div className="flex items-center space-x-1.5 font-semibold text-slate-900 dark:text-white">
@@ -236,7 +259,7 @@ export const AppointmentDetail: React.FC = () => {
                 <span>{slotStartStr} – {slotEndStr}</span>
               </div>
             </div>
-
+ 
             {appointment.status === 'RESCHEDULED' && (
               <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-200 dark:border-slate-700/40 space-y-1 sm:col-span-3">
                 <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Rescheduled To</span>
@@ -250,6 +273,27 @@ export const AppointmentDetail: React.FC = () => {
                 </div>
               </div>
             )}
+
+            {appointment.status === 'CONFIRMED' && !appointment.is_started && (
+              <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-200 dark:border-slate-700/40 space-y-2 sm:col-span-3">
+                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Presence / Check-In Status</span>
+                <div className="flex flex-wrap gap-4 text-xs">
+                  <div className="flex items-center space-x-2">
+                    <span className={`w-2.5 h-2.5 rounded-full ${appointment.patient_joined ? 'bg-teal-500 animate-pulse' : 'bg-slate-300 dark:bg-slate-600'}`} />
+                    <span className="font-semibold text-slate-900 dark:text-white">
+                      You: {appointment.patient_joined ? 'Checked-in (Online)' : 'Waiting for you to join'}
+                    </span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <span className={`w-2.5 h-2.5 rounded-full ${appointment.doctor_joined ? 'bg-teal-500 animate-pulse' : 'bg-slate-300 dark:bg-slate-600'}`} />
+                    <span className="font-semibold text-slate-900 dark:text-white">
+                      Doctor: {appointment.doctor_joined ? 'Checked-in (Online)' : 'Waiting for doctor to join'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {appointment.status === 'CONFIRMED' && !appointment.is_started && appointment.start_otp && (
               <div className="bg-gradient-to-r from-teal-500/10 to-emerald-500/10 p-4 rounded-xl border border-teal-500/20 space-y-2 sm:col-span-3">
                 <span className="text-[11px] font-bold text-teal-600 dark:text-teal-400 uppercase tracking-wider block">Start Consultation Verification Code (OTP)</span>

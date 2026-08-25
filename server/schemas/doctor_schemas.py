@@ -50,6 +50,7 @@ class DoctorResponse(BaseModel):
     is_active: bool
     demerit_points: int
     is_suspended: bool
+    unattended_count: int
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)

@@ -66,6 +66,10 @@ class AppointmentResponse(BaseModel):
     is_started: bool
     start_reminder_sent: bool
     reassigned_by_admin: bool
+    doctor_joined: bool
+    patient_joined: bool
+    unattended_by: Optional[str] = None
+    cancel_reason: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 

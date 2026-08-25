@@ -1080,6 +1080,27 @@ Provide a friendly, concise, and helpful response. Answer directly and do not me
         
     return {"reply": reply}
 
+@router.post("/appointments/{appointment_id}/join", response_model=dict)
+async def patient_join_appointment(
+    appointment_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Mark that the patient has joined/checked-in to the appointment."""
+    repo = AppointmentRepository(db)
+    appt = await repo.get_by_id(appointment_id)
+    if not appt:
+        raise NotFoundError("Appointment not found")
+    if appt.patient_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not your appointment")
+    
+    if not appt.patient_joined:
+        appt.patient_joined = True
+        await db.commit()
+        
+    return {"success": True, "message": "Checked in successfully"}
+
+
 def generate_support_chat_fallback(message: str, appointments_summary: str, doctors_summary: str) -> str:
     msg = message.lower()
     if "appointment" in msg or "booking" in msg or "schedule" in msg or "reschedule" in msg:

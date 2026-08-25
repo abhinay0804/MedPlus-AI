@@ -1093,7 +1093,8 @@ async def get_patient_directory(
             "country": p.country,
             "created_at": p.created_at,
             "stats": stats_dict,
-            "last_visit": last_visit
+            "last_visit": last_visit,
+            "unattended_count": p.unattended_count
         })
     return results
 

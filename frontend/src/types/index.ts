@@ -20,6 +20,7 @@ export interface User {
   country?: string
   role: UserRole
   has_google_calendar: boolean
+  unattended_count?: number
   created_at: string
 }
 
@@ -41,6 +42,7 @@ export interface DoctorProfile {
   is_active: boolean
   demerit_points?: number
   is_suspended?: boolean
+  unattended_count?: number
   created_at: string
 }
 
@@ -100,6 +102,10 @@ export interface Appointment {
   is_started?: boolean
   start_reminder_sent?: boolean
   reassigned_by_admin?: boolean
+  doctor_joined?: boolean
+  patient_joined?: boolean
+  unattended_by?: string
+  cancel_reason?: string
   created_at: string
   updated_at: string
   doctor?: DoctorProfile

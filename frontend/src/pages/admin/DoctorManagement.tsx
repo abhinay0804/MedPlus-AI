@@ -145,6 +145,8 @@ export const DoctorManagement: React.FC = () => {
                     <th className="p-4">Doctor</th>
                     <th className="p-4">Specialisation</th>
                     <th className="p-4">Slot Length</th>
+                    <th className="p-4">Demerits</th>
+                    <th className="p-4">Unattended</th>
                     <th className="p-4">Status</th>
                     <th className="p-4 text-right">Actions</th>
                   </tr>
@@ -165,6 +167,12 @@ export const DoctorManagement: React.FC = () => {
                       </td>
                       <td className="p-4 text-teal-400 font-semibold text-xs">{doctor.specialisation}</td>
                       <td className="p-4 text-xs">{doctor.slot_duration_minutes} Mins</td>
+                      <td className="p-4 text-xs font-bold text-rose-500">
+                        {doctor.demerit_points || 0} / 10
+                      </td>
+                      <td className="p-4 text-xs font-semibold text-slate-400">
+                        {doctor.unattended_count || 0}
+                      </td>
                       <td className="p-4">
                         <span
                           className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${

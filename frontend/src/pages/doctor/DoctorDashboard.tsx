@@ -163,6 +163,14 @@ export const DoctorDashboard: React.FC = () => {
       setNotesText(selectedAppt.post_visit_note?.doctor_notes || '')
       setPrescriptionText(selectedAppt.post_visit_note?.prescription_text || '')
       setMessage(selectedAppt.post_visit_note ? 'Existing consultation notes loaded.' : null)
+      
+      if (selectedAppt.status === 'CONFIRMED' && !selectedAppt.is_started && !selectedAppt.doctor_joined) {
+        api.post(`/doctor/appointments/${selectedAppt.id}/join`, {})
+          .then(() => {
+            setSelectedAppt(prev => prev && prev.id === selectedAppt.id ? { ...prev, doctor_joined: true } : prev)
+          })
+          .catch(err => console.error('Failed to auto check-in doctor:', err))
+      }
     }
   }, [selectedAppt?.id])
 
@@ -494,11 +502,17 @@ export const DoctorDashboard: React.FC = () => {
                             ? 'bg-teal-500/10 border-teal-500/30 text-teal-600 dark:text-teal-400'
                             : appt.status === 'PENDING_APPROVAL'
                             ? 'bg-amber-500/10 border-amber-500/30 text-amber-600 dark:text-amber-400 animate-pulse'
+                            : appt.status === 'CANCELLED' && appt.cancel_reason === 'unattended'
+                            ? 'bg-slate-100 dark:bg-slate-800/40 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400'
                             : appt.status === 'CANCELLED'
                             ? 'bg-rose-500/10 border-rose-500/30 text-rose-600 dark:text-rose-400'
                             : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600'
                         }`}>
-                          {appt.status === 'PENDING_APPROVAL' ? 'PENDING APPROVAL' : appt.status}
+                          {appt.status === 'PENDING_APPROVAL'
+                            ? 'PENDING APPROVAL'
+                            : appt.status === 'CANCELLED' && appt.cancel_reason === 'unattended'
+                            ? 'UNATTENDED'
+                            : appt.status}
                         </span>
                       </div>
                       <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
@@ -733,6 +747,26 @@ export const DoctorDashboard: React.FC = () => {
                                 This consultation is scheduled to begin on {formatDateTime(selectedAppt.slot_start)}. 
                                 Please request the verification OTP from the patient to start the consultation.
                               </p>
+
+                              {/* Presence / Check-In Status */}
+                              <div className="bg-slate-50 dark:bg-slate-800/30 p-4 rounded-xl border border-slate-200 dark:border-slate-800 max-w-md mx-auto text-left space-y-2 text-xs">
+                                <span className="font-bold text-slate-400 uppercase tracking-wider block text-[10px]">Presence / Check-In Status</span>
+                                <div className="flex flex-col space-y-1.5">
+                                  <div className="flex items-center space-x-2">
+                                    <span className={`w-2.5 h-2.5 rounded-full ${selectedAppt.doctor_joined ? 'bg-teal-500 animate-pulse' : 'bg-slate-300 dark:bg-slate-600'}`} />
+                                    <span className="font-semibold text-slate-900 dark:text-white">
+                                      You: {selectedAppt.doctor_joined ? 'Checked-in (Online)' : 'Waiting for you to join'}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center space-x-2">
+                                    <span className={`w-2.5 h-2.5 rounded-full ${selectedAppt.patient_joined ? 'bg-teal-500 animate-pulse' : 'bg-slate-300 dark:bg-slate-600'}`} />
+                                    <span className="font-semibold text-slate-900 dark:text-white">
+                                      Patient: {selectedAppt.patient_joined ? 'Checked-in (Online)' : 'Waiting for patient to join'}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+
                               <div className="flex items-center justify-center space-x-3 pt-2">
                                 <button
                                   type="button"

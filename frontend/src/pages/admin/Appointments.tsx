@@ -256,9 +256,23 @@ export const Appointments: React.FC = () => {
                         )}
                       </td>
                       <td className="p-4">
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${getStatusStyle(appt.status)}`}>
-                          {appt.status.replace('_', ' ')}
-                        </span>
+                        <div className="flex flex-col space-y-1 items-start">
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                            appt.status === 'CANCELLED' && appt.cancel_reason === 'unattended'
+                              ? 'bg-slate-105 text-slate-600 dark:bg-slate-800/40 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800'
+                              : getStatusStyle(appt.status)
+                          }`}>
+                            {appt.status === 'CANCELLED' && appt.cancel_reason === 'unattended'
+                              ? 'UNATTENDED'
+                              : appt.status.replace('_', ' ')}
+                          </span>
+                          {appt.status === 'CONFIRMED' && !appt.is_started && (
+                            <div className="flex flex-col space-y-0.5 text-[9px] text-slate-500 font-semibold leading-normal pt-1">
+                              <div>Doc check-in: <span className={appt.doctor_joined ? 'text-teal-600 font-bold' : 'text-rose-500'}>{appt.doctor_joined ? 'Joined' : 'Absent'}</span></div>
+                              <div>Pat check-in: <span className={appt.patient_joined ? 'text-teal-600 font-bold' : 'text-rose-500'}>{appt.patient_joined ? 'Joined' : 'Absent'}</span></div>
+                            </div>
+                          )}
+                        </div>
                       </td>
                       <td className="p-4 text-right space-x-2">
                         {appt.status !== 'COMPLETED' && appt.status !== 'CANCELLED' && appt.status !== 'RESCHEDULED' && (

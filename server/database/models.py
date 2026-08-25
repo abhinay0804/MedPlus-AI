@@ -1,4 +1,5 @@
 import uuid
+from typing import Optional
 from datetime import datetime, date, time
 import enum
 from sqlalchemy import (
@@ -50,6 +51,7 @@ class User(Base):
     # Google OAuth Tokens
     google_access_token: Mapped[str] = mapped_column(Text, nullable=True)
     google_refresh_token: Mapped[str] = mapped_column(Text, nullable=True)
+    unattended_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
@@ -72,6 +74,7 @@ class DoctorProfile(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     demerit_points: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     is_suspended: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    unattended_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
     # Relationships
@@ -127,6 +130,10 @@ class Appointment(Base):
     is_started: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     start_reminder_sent: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     reassigned_by_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    doctor_joined: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    patient_joined: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    unattended_by: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    cancel_reason: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 

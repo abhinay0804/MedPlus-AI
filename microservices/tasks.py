@@ -914,7 +914,7 @@ def start_appointment_reminder_task():
 
 @celery_app.task(name="microservices.tasks.missed_appointment_check_task")
 def missed_appointment_check_task():
-    """Celery Beat task: mark appointments missed after 2 hours from slot end if never started. Penalizes doctor."""
+    """Celery Beat task: mark appointments missed after 2 hours from slot end if never started. Assigns blame to doctor or patient."""
     async def _run():
         from sqlalchemy import select, and_
         from sqlalchemy.orm import selectinload
@@ -946,96 +946,223 @@ def missed_appointment_check_task():
                 # Cancel the appointment
                 appt.status = AppointmentStatus.CANCELLED
                 appt.hold_expires_at = None
-                db.add(appt)
+                appt.cancel_reason = "unattended"
                 
-                # Penalize doctor with 5 demerit points
                 doc = appt.doctor
-                doc.demerit_points += 5
-                
-                suspension_msg = ""
-                if doc.demerit_points >= 10:
-                    doc.is_suspended = True
-                    suspension_msg = " Your account is now suspended due to excessive demerit points."
-                    
-                    # In-app notification for suspension
-                    suspension_notif = InAppNotification(
-                        user_id=doc.user_id,
-                        title="Profile Suspended due to Demerits",
-                        body=f"Your profile has been suspended after earning 5 demerit points for a missed consultation (total: {doc.demerit_points}). Access locked.",
-                        type="admin_note",
-                        link="/doctor/dashboard"
-                    )
-                    db.add(suspension_notif)
-                    
-                    # Send suspension email
-                    safe_dispatch(
-                        send_email_task,
-                        doc.user.email,
-                        "Account Suspended — MedPulse AI",
-                        "generic_notification",
-                        {
-                            "title": "Account Suspended",
-                            "message": f"Hello Dr. {doc.user.full_name},\n\nYour clinic access has been suspended because you have reached {doc.demerit_points} demerit points.\n\nLatest violation: Missed appointment without cancellation (5 demerits).\n\nPlease contact the clinic administrator to review your profile and reactivate your account.\n\nBest regards,\nMedPulse AI Administration"
-                        }
-                    )
-                db.add(doc)
-
-                # Log audit trail
-                audit = AuditLog(
-                    action="APPOINTMENT_MISSED_BY_DOCTOR",
-                    target_type="Appointment",
-                    target_id=appt.id,
-                    user_id=doc.user_id,
-                    details=f"Doctor missed appointment. 5 demerits assigned. Total: {doc.demerit_points}."
-                )
-                db.add(audit)
-
-                # Notify doctor
-                if doc.user:
-                    safe_dispatch(
-                        send_email_task,
-                        doc.user.email,
-                        "Missed Appointment Penalty - MedPulse AI",
-                        "generic_notification",
-                        {
-                            "title": "Penalty: Missed Appointment",
-                            "message": f"Hello Dr. {doc.user.full_name},\n\nYou missed a scheduled medical consultation with patient {appt.patient.full_name} on {appt.slot_start.strftime('%Y-%m-%d %I:%M %p')} without formal cancellation.\n\nYou have been penalized with 5 demerit points. Your total demerit count is now {doc.demerit_points}/10.{suspension_msg}\n\nBest regards,\nMedPulse AI Administration"
-                        }
-                    )
-                    
-                    # Create in-app notification for doctor
-                    notif_doc = InAppNotification(
-                        user_id=doc.user_id,
-                        title="Penalty: Missed Appointment",
-                        body=f"You missed your consultation with {appt.patient.full_name} on {appt.slot_start.strftime('%Y-%m-%d')}. 5 demerits assigned.",
-                        type="admin_note",
-                        link="/doctor/dashboard"
-                    )
-                    db.add(notif_doc)
-
-                # Notify patient
                 pat = appt.patient
-                safe_dispatch(
-                    send_email_task,
-                    pat.email,
-                    "Appointment Cancelled — Doctor Unavailable",
-                    "generic_notification",
-                    {
-                        "title": "Appointment Cancelled",
-                        "message": f"Hello {pat.full_name},\n\nWe apologize, but your consultation with Dr. {doc.user.full_name} scheduled for {appt.slot_start.strftime('%Y-%m-%d %I:%M %p')} was missed. The slot has been cancelled.\n\nPlease log in to reschedule your appointment at your earliest convenience.\n\nBest regards,\nMedPulse AI Care Team"
-                    }
-                )
-                
-                # Create in-app notification for patient
-                notif_pat = InAppNotification(
-                    user_id=pat.id,
-                    title="Appointment Cancelled — Doctor Unavailable",
-                    body=f"Your consultation with Dr. {doc.user.full_name} was missed by the physician and has been cancelled. Please reschedule.",
-                    type="appointment",
-                    link="/patient/appointments"
-                )
-                db.add(notif_pat)
 
+                # Determine blame/fault based on presence/check-in flags
+                if not appt.doctor_joined:
+                    # Doctor did not show up (Doctor Unattended or Both Unattended)
+                    if appt.patient_joined:
+                        appt.unattended_by = "DOCTOR"
+                        # Notify patient
+                        safe_dispatch(
+                            send_email_task,
+                            pat.email,
+                            "Appointment Cancelled — Doctor Unavailable",
+                            "generic_notification",
+                            {
+                                "title": "Appointment Cancelled",
+                                "message": f"Hello {pat.full_name},\n\nWe apologize, but your consultation with Dr. {doc.user.full_name} scheduled for {appt.slot_start.strftime('%Y-%m-%d %I:%M %p')} was missed by the physician. The slot has been cancelled.\n\nPlease log in to reschedule your appointment at your earliest convenience.\n\nBest regards,\nMedPulse AI Care Team"
+                            }
+                        )
+                        # Create in-app notification for patient
+                        notif_pat = InAppNotification(
+                            user_id=pat.id,
+                            title="Appointment Cancelled — Doctor Unavailable",
+                            body=f"Your consultation with Dr. {doc.user.full_name} was missed by the physician and has been cancelled. Please reschedule.",
+                            type="appointment",
+                            link="/patient/appointments"
+                        )
+                        db.add(notif_pat)
+                    else:
+                        appt.unattended_by = "BOTH"
+                        pat.unattended_count += 1
+                        db.add(pat)
+                        # Warn patient for negligence (skipping)
+                        safe_dispatch(
+                            send_email_task,
+                            pat.email,
+                            "Warning: Missed Scheduled Consultation",
+                            "generic_notification",
+                            {
+                                "title": "Warning: Missed Consultation",
+                                "message": f"Hello {pat.full_name},\n\nYou missed your scheduled consultation with Dr. {doc.user.full_name} on {appt.slot_start.strftime('%Y-%m-%d %I:%M %p')}. Please note that repeated skippings of your appointments may result in the suspension of your account.\n\nBest regards,\nMedPulse AI Care Team"
+                            }
+                        )
+                        # Create in-app warning notification for patient
+                        notif_pat = InAppNotification(
+                            user_id=pat.id,
+                            title="Warning: Missed Consultation",
+                            body=f"You missed your consultation with Dr. {doc.user.full_name} on {appt.slot_start.strftime('%Y-%m-%d')}. Repeated skippings can suspend your account.",
+                            type="system",
+                            link="/patient/appointments"
+                        )
+                        db.add(notif_pat)
+
+                    # Penalize doctor with 5 demerit points and increment unattended count
+                    doc.demerit_points += 5
+                    doc.unattended_count += 1
+                    
+                    suspension_msg = ""
+                    if doc.demerit_points >= 10:
+                        doc.is_suspended = True
+                        suspension_msg = " Your account is now suspended due to excessive demerit points."
+                        
+                        # In-app notification for suspension
+                        suspension_notif = InAppNotification(
+                            user_id=doc.user_id,
+                            title="Profile Suspended due to Demerits",
+                            body=f"Your profile has been suspended after earning 5 demerit points for a missed consultation (total: {doc.demerit_points}). Access locked.",
+                            type="admin_note",
+                            link="/doctor/dashboard"
+                        )
+                        db.add(suspension_notif)
+                        
+                        # Send suspension email
+                        safe_dispatch(
+                            send_email_task,
+                            doc.user.email,
+                            "Account Suspended — MedPulse AI",
+                            "generic_notification",
+                            {
+                                "title": "Account Suspended",
+                                "message": f"Hello Dr. {doc.user.full_name},\n\nYour clinic access has been suspended because you have reached {doc.demerit_points} demerit points.\n\nLatest violation: Missed appointment without cancellation (5 demerits).\n\nPlease contact the clinic administrator to review your profile and reactivate your account.\n\nBest regards,\nMedPulse AI Administration"
+                            }
+                        )
+                    db.add(doc)
+
+                    # Log audit trail
+                    audit = AuditLog(
+                        action="APPOINTMENT_MISSED_BY_DOCTOR",
+                        target_type="Appointment",
+                        target_id=appt.id,
+                        user_id=doc.user_id,
+                        details=f"Doctor missed appointment. 5 demerits assigned. Total demerits: {doc.demerit_points}. Fault attribution: {appt.unattended_by}."
+                    )
+                    db.add(audit)
+
+                    # Notify doctor
+                    if doc.user:
+                        safe_dispatch(
+                            send_email_task,
+                            doc.user.email,
+                            "Missed Appointment Penalty - MedPulse AI",
+                            "generic_notification",
+                            {
+                                "title": "Penalty: Missed Appointment",
+                                "message": f"Hello Dr. {doc.user.full_name},\n\nYou missed a scheduled medical consultation with patient {pat.full_name} on {appt.slot_start.strftime('%Y-%m-%d %I:%M %p')} without formal cancellation.\n\nYou have been penalized with 5 demerit points. Your total demerit count is now {doc.demerit_points}/10.{suspension_msg}\n\nBest regards,\nMedPulse AI Administration"
+                            }
+                        )
+                        
+                        # Create in-app notification for doctor
+                        notif_doc = InAppNotification(
+                            user_id=doc.user_id,
+                            title="Penalty: Missed Appointment",
+                            body=f"You missed your consultation with {pat.full_name} on {appt.slot_start.strftime('%Y-%m-%d')}. 5 demerits assigned.",
+                            type="admin_note",
+                            link="/doctor/dashboard"
+                        )
+                        db.add(notif_doc)
+
+                elif not appt.patient_joined:
+                    # Doctor checked in, but patient did not (Patient Negligence)
+                    appt.unattended_by = "PATIENT"
+                    pat.unattended_count += 1
+                    db.add(pat)
+
+                    # Warn patient for negligence (skipping)
+                    safe_dispatch(
+                        send_email_task,
+                        pat.email,
+                        "Warning: Missed Scheduled Consultation",
+                        "generic_notification",
+                        {
+                            "title": "Warning: Missed Consultation",
+                            "message": f"Hello {pat.full_name},\n\nYou missed your scheduled consultation with Dr. {doc.user.full_name} on {appt.slot_start.strftime('%Y-%m-%d %I:%M %p')}. Please note that repeated skippings of your appointments may result in the suspension of your account.\n\nBest regards,\nMedPulse AI Care Team"
+                        }
+                    )
+                    # Create in-app warning notification for patient
+                    notif_pat = InAppNotification(
+                        user_id=pat.id,
+                        title="Warning: Missed Consultation",
+                        body=f"You missed your consultation with Dr. {doc.user.full_name} on {appt.slot_start.strftime('%Y-%m-%d')}. Repeated skippings can suspend your account.",
+                        type="system",
+                        link="/patient/appointments"
+                    )
+                    db.add(notif_pat)
+
+                    # Log audit trail
+                    audit = AuditLog(
+                        action="APPOINTMENT_MISSED_BY_PATIENT",
+                        target_type="Appointment",
+                        target_id=appt.id,
+                        user_id=pat.id,
+                        details="Patient missed appointment. Warning email dispatched."
+                    )
+                    db.add(audit)
+
+                    # Notify doctor (No penalty applied)
+                    if doc.user:
+                        safe_dispatch(
+                            send_email_task,
+                            doc.user.email,
+                            "Patient Missed Consultation - MedPulse AI",
+                            "generic_notification",
+                            {
+                                "title": "Consultation Missed by Patient",
+                                "message": f"Hello Dr. {doc.user.full_name},\n\nYour patient {pat.full_name} did not check in for the consultation scheduled for {appt.slot_start.strftime('%Y-%m-%d %I:%M %p')}.\n\nSince you checked in, no demerit points have been assigned to your profile. The slot has been cancelled as unattended.\n\nBest regards,\nMedPulse AI Administration"
+                            }
+                        )
+                        # Create in-app notification for doctor
+                        notif_doc = InAppNotification(
+                            user_id=doc.user_id,
+                            title="Consultation Missed by Patient",
+                            body=f"Patient {pat.full_name} missed their consultation scheduled on {appt.slot_start.strftime('%Y-%m-%d')}. No penalty applied.",
+                            type="system",
+                            link="/doctor/dashboard"
+                        )
+                        db.add(notif_doc)
+                else:
+                    # Both checked in but verification never started (Technical/other issue)
+                    appt.unattended_by = "BOTH"
+                    
+                    # Notify patient
+                    safe_dispatch(
+                        send_email_task,
+                        pat.email,
+                        "Consultation Cancelled — Technical Limitations",
+                        "generic_notification",
+                        {
+                            "title": "Consultation Cancelled",
+                            "message": f"Hello {pat.full_name},\n\nYour scheduled consultation with Dr. {doc.user.full_name} on {appt.slot_start.strftime('%Y-%m-%d %I:%M %p')} has been cancelled. Both parties checked in, but the session was not unlocked. No penalties have been applied.\n\nPlease log in to reschedule your session.\n\nBest regards,\nMedPulse AI Care Team"
+                        }
+                    )
+                    # Notify doctor
+                    if doc.user:
+                        safe_dispatch(
+                            send_email_task,
+                            doc.user.email,
+                            "Consultation Cancelled — Unlocked Timeout",
+                            "generic_notification",
+                            {
+                                "title": "Consultation Cancelled",
+                                "message": f"Hello Dr. {doc.user.full_name},\n\nThe consultation scheduled with {pat.full_name} on {appt.slot_start.strftime('%Y-%m-%d %I:%M %p')} has been cancelled because the session was not started/unlocked before expiration. No demerit points have been assigned.\n\nBest regards,\nMedPulse AI Administration"
+                            }
+                        )
+
+                    # Log audit trail
+                    audit = AuditLog(
+                        action="APPOINTMENT_MISSED_TECHNICAL",
+                        target_type="Appointment",
+                        target_id=appt.id,
+                        user_id=doc.user_id,
+                        details="Both checked in but consultation was never unlocked."
+                    )
+                    db.add(audit)
+
+                db.add(appt)
                 # Sync Calendar deletion
                 safe_dispatch(sync_calendar_event_task, appt.id, "delete")
             await db.commit()

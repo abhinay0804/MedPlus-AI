@@ -21,6 +21,7 @@ interface PatientRecord {
   created_at: string
   stats: PatientStats
   last_visit: string | null
+  unattended_count?: number
 }
 
 export const Patients: React.FC = () => {
@@ -203,8 +204,12 @@ export const Patients: React.FC = () => {
                           <div className="text-[10px] text-slate-500 uppercase">Upcoming</div>
                         </div>
                         <div className="text-center border-l border-slate-200 dark:border-slate-800 pl-3">
-                          <div className="font-bold text-slate-500">{p.stats.CANCELLED || 0}</div>
-                          <div className="text-[10px] text-slate-550 uppercase">Cancelled</div>
+                          <div className="font-bold text-slate-550">{p.stats.CANCELLED || 0}</div>
+                          <div className="text-[10px] text-slate-500 uppercase">Cancelled</div>
+                        </div>
+                        <div className="text-center border-l border-slate-200 dark:border-slate-800 pl-3">
+                          <div className="font-bold text-rose-500">{p.unattended_count || 0}</div>
+                          <div className="text-[10px] text-rose-500 uppercase">Unattended</div>
                         </div>
                       </div>
 
