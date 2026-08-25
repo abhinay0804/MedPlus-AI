@@ -449,8 +449,8 @@ def send_medication_reminders_task():
             patient_groups = defaultdict(list)
             
             for reminder in due:
-                reminder_hhmm = reminder.reminder_time.strftime("%H:%M")
-                if reminder_hhmm == current_time_str:
+                last_sent_date = reminder.last_sent_at.date() if reminder.last_sent_at else None
+                if reminder.reminder_time <= now.time() and (last_sent_date is None or last_sent_date < today):
                     patient_groups[reminder.patient.email].append(reminder)
             
             sent = 0

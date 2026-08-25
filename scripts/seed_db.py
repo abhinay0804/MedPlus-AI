@@ -133,9 +133,9 @@ async def seed():
                 profile = res_prof.scalar_one()
                 seeded_docs[d["email"]] = profile
                 print(f"🔄 Doctor password reset: {d['email']} / DoctorPassword123!")
-
-        # 4. Seed the 10 Patients (including requested emails with default password)
+        # 4. Seed the Patients (including requested emails with default password)
         patient_emails = [
+            ("abhinaychowdhary97@gmail.com", "Abhinay Chowdhary", "+919876543214", "India"),
             ("namabhinay@gmail.com", "Abhinay Nama", "+919876543210", "India"),
             ("nama.abhinay2023@vitstudent.ac.in", "Abhinay VIT", "+919876543211", "India"),
             ("abhilinux25@gmail.com", "Abhinay Linux", "+919876543212", "India"),
@@ -178,7 +178,7 @@ async def seed():
         dr_chen = seeded_docs["dr.chen@healthcare.com"]
 
         # Helper: Create Full Appointment Cycle
-        async def create_appt(patient_obj, doctor_profile, slot_start, status, is_started=False, review_rating=None, review_comment=None, symptom_txt="High fever and severe headache.", note_summary=None, has_ticket=False, ticket_status="OPEN", ticket_msg=""):
+        async def create_appt(patient_obj, doctor_profile, slot_start, status, is_started=False, review_rating=None, review_comment=None, symptom_txt="High fever and severe headache.", note_summary=None, has_ticket=False, ticket_status="OPEN", ticket_msg="", reminder_time_override=None):
             appt = Appointment(
                 patient_id=patient_obj.id,
                 doctor_id=doctor_profile.id,
@@ -200,7 +200,7 @@ async def seed():
                 llm_status=LLMStatus.SUCCESS,
                 pre_visit_summary={
                     "clinical_summary": f"Patient reports: {symptom_txt}",
-                    "symptoms_analysis": ["Fever", "Headache"] if "fever" in symptom_txt.lower() else ["Fatigue", "Muscle cramps"],
+                    "symptoms_analysis": ["Fatigue", "Muscle cramps"],
                     "ai_warning_flags": ["Severe symptoms - consult doctor promptly"]
                 }
             )
@@ -227,7 +227,7 @@ async def seed():
                     frequency="DAILY",
                     start_date=slot_start.date(),
                     end_date=(slot_start + timedelta(days=14)).date(),
-                    reminder_time=time_type(hour=8, minute=0),
+                    reminder_time=reminder_time_override or time_type(hour=8, minute=0),
                     is_active=True
                 )
                 db.add(reminder)
@@ -264,6 +264,19 @@ async def seed():
 
         # Seed realistic appointment grid relative to today
         today = datetime.utcnow().replace(hour=10, minute=0, second=0, microsecond=0)
+
+        # Patient 0: abhinaychowdhary97@gmail.com (with 5-minute dynamic reminder)
+        import datetime as dt_module
+        target_reminder_time = (dt_module.datetime.now() + dt_module.timedelta(minutes=5)).time()
+        print(f"⏰ Setting dynamic medication reminder for abhinaychowdhary97@gmail.com at: {target_reminder_time.strftime('%H:%M:%S')}")
+        await create_appt(
+            seeded_patients["abhinaychowdhary97@gmail.com"], dr_smith,
+            today - timedelta(days=1), AppointmentStatus.COMPLETED,
+            is_started=True, review_rating=5, review_comment="Outstanding clinic session!",
+            symptom_txt="Experiencing temporary muscle cramps and fatigue.",
+            note_summary="Prescribed Magnesium Glycinate daily for muscle cramp recovery.",
+            reminder_time_override=target_reminder_time
+        )
 
         # Patient 1: namabhinay@gmail.com
         # - 1 Completed slot (with 5-star review)
