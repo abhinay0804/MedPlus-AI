@@ -145,10 +145,15 @@ import socket
 logger = logging.getLogger(__name__)
 
 def is_redis_online() -> bool:
+    from urllib.parse import urlparse
+    from server.config import settings
     try:
+        url = urlparse(settings.REDIS_URL)
+        host = url.hostname or "127.0.0.1"
+        port = url.port or 6379
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.settimeout(0.05)  # 50ms max timeout
-        s.connect(("127.0.0.1", 6379))
+        s.settimeout(0.1)  # 100ms max timeout
+        s.connect((host, port))
         s.close()
         return True
     except Exception:
