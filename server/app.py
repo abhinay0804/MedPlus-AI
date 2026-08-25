@@ -31,6 +31,16 @@ async def auto_migrate_schema(conn):
             else:
                 print(f"⚠️ Auto-migration info: {table}.{col} not added: {e}")
 
+    try:
+        await conn.execute(text("UPDATE appointments SET doctor_joined = FALSE WHERE doctor_joined IS NULL"))
+        await conn.execute(text("UPDATE appointments SET patient_joined = FALSE WHERE patient_joined IS NULL"))
+        await conn.execute(text("UPDATE users SET unattended_count = 0 WHERE unattended_count IS NULL"))
+        await conn.execute(text("UPDATE doctor_profiles SET demerit_points = 0 WHERE demerit_points IS NULL"))
+        await conn.execute(text("UPDATE doctor_profiles SET unattended_count = 0 WHERE unattended_count IS NULL"))
+        print("✅ Backfilled existing nulls with default values.")
+    except Exception as e:
+        print(f"⚠️ Backfill nulls info: {e}")
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     import asyncio
