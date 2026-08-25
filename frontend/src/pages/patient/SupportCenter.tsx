@@ -3,7 +3,7 @@ import { Layout } from '../../components/Layout'
 import { apiRequest } from '../../lib/api'
 import {
   MessageSquare, Send, Plus, Star, HelpCircle,
-  CheckCircle2, Clock, AlertCircle, X, ChevronDown, ChevronUp, Calendar
+  CheckCircle2, Clock, AlertCircle, X, ChevronDown, ChevronUp, Calendar, Square
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -96,6 +96,16 @@ export default function SupportCenter() {
     }
   }
 
+  const abortControllerRef = useRef<AbortController | null>(null)
+
+  const handleStopGenerating = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+      abortControllerRef.current = null
+      setIsAiResponding(false)
+    }
+  }
+
   const handleSendChat = async (e?: React.FormEvent, customMsg?: string) => {
     e?.preventDefault()
     const msg = (customMsg || chatInput).trim()
@@ -109,22 +119,36 @@ export default function SupportCenter() {
     setChatMessages(newMessages)
     setIsAiResponding(true)
 
+    // Create and save new AbortController
+    const controller = new AbortController()
+    abortControllerRef.current = controller
+
     try {
       const response = await apiRequest<{ reply: string }>('/patient/support/chat', {
         method: 'POST',
         body: JSON.stringify({
           message: msg,
           history: chatMessages.map(m => ({ role: m.role, content: m.content }))
-        })
+        }),
+        signal: controller.signal
       })
       setChatMessages(prev => [...prev, { role: 'assistant', content: response.reply }])
     } catch (err: any) {
-      setChatMessages(prev => [
-        ...prev,
-        { role: 'assistant', content: "I'm sorry, I'm experiencing technical issues connecting to my AI core right now. Feel free to open a support ticket for our administrator if you need immediate assistance." }
-      ])
+      // Don't show technical issue error if aborted intentionally
+      if (err.name === 'AbortError' || err.message?.includes('aborted') || controller.signal.aborted) {
+        setChatMessages(prev => [
+          ...prev,
+          { role: 'assistant', content: "Generation stopped." }
+        ])
+      } else {
+        setChatMessages(prev => [
+          ...prev,
+          { role: 'assistant', content: "I'm sorry, I'm experiencing technical issues connecting to my AI core right now. Feel free to open a support ticket for our administrator if you need immediate assistance." }
+        ])
+      }
     } finally {
       setIsAiResponding(false)
+      abortControllerRef.current = null
     }
   }
 
@@ -297,20 +321,23 @@ export default function SupportCenter() {
             {/* Quick Suggestion Pills */}
             <div className="px-4 py-2 border-t border-slate-100 dark:border-slate-800/50 flex flex-wrap gap-1.5 bg-slate-50/50 dark:bg-slate-900/30">
               <button
+                disabled={isAiResponding}
                 onClick={() => handleSendChat(undefined, "List my appointment bookings")}
-                className="px-2.5 py-1 bg-white dark:bg-slate-850 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 rounded-lg text-[10px] font-semibold transition"
+                className="px-2.5 py-1 bg-white dark:bg-slate-850 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 text-slate-650 dark:text-slate-300 rounded-lg text-[10px] font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
               >
                 📅 My active bookings
               </button>
               <button
+                disabled={isAiResponding}
                 onClick={() => handleSendChat(undefined, "Show doctor specialists directory")}
-                className="px-2.5 py-1 bg-white dark:bg-slate-850 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 rounded-lg text-[10px] font-semibold transition"
+                className="px-2.5 py-1 bg-white dark:bg-slate-850 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 text-slate-650 dark:text-slate-300 rounded-lg text-[10px] font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
               >
                 🩺 Specialists list
               </button>
               <button
+                disabled={isAiResponding}
                 onClick={() => handleSendChat(undefined, "What is the doctor suspension and demerits policy?")}
-                className="px-2.5 py-1 bg-white dark:bg-slate-850 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 rounded-lg text-[10px] font-semibold transition"
+                className="px-2.5 py-1 bg-white dark:bg-slate-850 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 text-slate-650 dark:text-slate-300 rounded-lg text-[10px] font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
               >
                 ⚠️ Suspension rules
               </button>
@@ -321,16 +348,28 @@ export default function SupportCenter() {
                 type="text"
                 value={chatInput}
                 onChange={(e) => setChatInput(e.target.value)}
-                placeholder="Ask assistant about bookings or clinic help..."
-                className="flex-1 px-4 py-2 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:border-teal-500 text-slate-900 dark:text-white"
+                disabled={isAiResponding}
+                placeholder={isAiResponding ? "Assistant is responding..." : "Ask assistant about bookings or clinic help..."}
+                className="flex-1 px-4 py-2 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:border-teal-500 text-slate-900 dark:text-white disabled:opacity-60"
               />
-              <button
-                type="submit"
-                disabled={!chatInput.trim() || isAiResponding}
-                className="p-2.5 bg-teal-500 hover:bg-teal-600 text-white rounded-xl transition disabled:opacity-50 cursor-pointer"
-              >
-                <Send className="w-4 h-4 fill-white" />
-              </button>
+              {isAiResponding ? (
+                <button
+                  type="button"
+                  onClick={handleStopGenerating}
+                  className="p-2.5 bg-rose-500 hover:bg-rose-600 text-white rounded-xl transition cursor-pointer flex items-center justify-center"
+                  title="Stop Generating"
+                >
+                  <Square className="w-4 h-4 fill-white text-white" />
+                </button>
+              ) : (
+                <button
+                  type="submit"
+                  disabled={!chatInput.trim()}
+                  className="p-2.5 bg-teal-500 hover:bg-teal-600 text-white rounded-xl transition disabled:opacity-50 cursor-pointer"
+                >
+                  <Send className="w-4 h-4 fill-white" />
+                </button>
+              )}
             </form>
           </div>
 

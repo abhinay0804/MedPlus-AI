@@ -41,6 +41,16 @@ export async function apiRequest<T = any>(
   const controller = new AbortController()
   const timeoutId = setTimeout(() => controller.abort(), 25000)
 
+  if (options.signal) {
+    if (options.signal.aborted) {
+      controller.abort()
+    } else {
+      options.signal.addEventListener('abort', () => {
+        controller.abort()
+      })
+    }
+  }
+
   try {
     const response = await fetch(`${API_BASE}${endpoint}`, {
       ...options,
