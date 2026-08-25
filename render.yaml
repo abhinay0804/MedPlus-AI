@@ -95,10 +95,8 @@ services:
   # ─────────────────────────────────────────────
   # 3. React Frontend (Static Site)
   # ─────────────────────────────────────────────
-  - type: web
+  - type: static
     name: medpulse-ai
-    runtime: static
-    plan: free
     buildCommand: cd frontend && npm install && npm run build
     staticPublishPath: frontend/dist
     headers:
