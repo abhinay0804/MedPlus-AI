@@ -46,9 +46,15 @@ logger = logging.getLogger(__name__)
 def run_async(coro):
     """Run an async coroutine from a synchronous Celery task context."""
     loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
     try:
         return loop.run_until_complete(coro)
     finally:
+        try:
+            from server.database.connection import engine
+            loop.run_until_complete(engine.dispose())
+        except Exception as e:
+            logger.warning(f"[Async Bridge] Engine dispose failed: {e}")
         loop.close()
 
 
