@@ -1,10 +1,11 @@
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI, Request, status, Depends
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from server.config import settings
-from server.database.connection import engine, Base
+from server.database.connection import engine, Base, get_db
 from server.routes import auth_routes, admin_routes, patient_routes, doctor_routes
 from server.websocket import ws_router, redis_subscriber
 
@@ -97,9 +98,22 @@ app.include_router(ws_router)  # WebSocket — no /api prefix (ws:// protocol)
 
 # Health check endpoint
 @app.get("/api/health", tags=["Health"])
-async def health_check():
+async def health_check(
+    db: AsyncSession = Depends(get_db)
+):
+    db_status = "ok"
+    db_error = None
+    try:
+        from sqlalchemy import text
+        await db.execute(text("SELECT 1"))
+    except Exception as e:
+        db_status = "error"
+        db_error = str(e)
+
     return {
-        "status": "healthy",
+        "status": "healthy" if db_status == "ok" else "unhealthy",
+        "database": db_status,
+        "database_error": db_error,
         "service": settings.PROJECT_NAME,
         "version": settings.VERSION,
         "environment": settings.ENVIRONMENT

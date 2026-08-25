@@ -14,6 +14,13 @@
 
 ---
 
+> ### 🌐 Live Cloud Deployment
+> * **Production Web Application**: [https://medpulse-ai-yroh.onrender.com](https://medpulse-ai-yroh.onrender.com)
+> * **Interactive API Documentation (Swagger)**: [https://medpulse-api-mtje.onrender.com/docs](https://medpulse-api-mtje.onrender.com/docs)
+> * **System Health & Connectivity Status**: [https://medpulse-api-mtje.onrender.com/api/health](https://medpulse-api-mtje.onrender.com/api/health)
+
+---
+
 ## 📋 Table of Contents
 
 - [Key Features & Standout Differentiators](#-key-features--standout-differentiators)
