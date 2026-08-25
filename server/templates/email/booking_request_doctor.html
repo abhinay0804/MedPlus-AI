@@ -26,13 +26,24 @@
             
             <div class="card">
                 <div style="margin-bottom: 15px;"><span class="badge">ACTION REQUIRED</span></div>
-                <div class="detail-row"><strong>Patient Name:</strong> <span>{{ patient_name }}</span></div>
-                <div class="detail-row"><strong>Date & Time:</strong> <span>{{ slot_start }}</span></div>
-                <div class="detail-row"><strong>Appointment ID:</strong> <span>{{ appointment_id }}</span></div>
+                <table style="width: 100%; border-collapse: collapse;">
+                    <tr>
+                        <td style="padding: 8px 0; border-bottom: 1px dashed #e2e8f0; font-size: 14px; color: #475569; width: 35%;"><strong>Patient Name:</strong></td>
+                        <td style="padding: 8px 0; border-bottom: 1px dashed #e2e8f0; font-size: 14px; color: #1e293b; text-align: right;">{{ patient_name }}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px 0; border-bottom: 1px dashed #e2e8f0; font-size: 14px; color: #475569;"><strong>Date & Time:</strong></td>
+                        <td style="padding: 8px 0; border-bottom: 1px dashed #e2e8f0; font-size: 14px; color: #1e293b; text-align: right;">{{ slot_start }}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px 0; border-bottom: 1px dashed #e2e8f0; font-size: 14px; color: #475569;"><strong>Appointment ID:</strong></td>
+                        <td style="padding: 8px 0; border-bottom: 1px dashed #e2e8f0; font-size: 14px; color: #1e293b; text-align: right; font-family: monospace;">{{ appointment_id }}</td>
+                    </tr>
+                </table>
             </div>
 
             <p>Please log in to your portal to view pre-consultation AI triage summaries for this patient and manage the request.</p>
-            <p>Best regards,<br><strong>HealthCare Appointments Team</strong></p>
+            <p>Best regards,<br><strong>MedPulse AI Care Team</strong></p>
         </div>
         <div class="footer">
             <p>&copy; 2026 HealthCare Appointments Manager. All rights reserved.</p>

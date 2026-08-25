@@ -26,12 +26,20 @@
             
             <div class="card">
                 <div style="margin-bottom: 15px;"><span class="badge">CANCELLED</span></div>
-                <div class="detail-row"><strong>Appointment ID:</strong> <span>{{ appointment_id }}</span></div>
-                <div class="detail-row"><strong>Reason:</strong> <span>{{ reason }}</span></div>
+                <table style="width: 100%; border-collapse: collapse;">
+                    <tr>
+                        <td style="padding: 8px 0; border-bottom: 1px dashed #e2e8f0; font-size: 14px; color: #475569; width: 35%;"><strong>Appointment ID:</strong></td>
+                        <td style="padding: 8px 0; border-bottom: 1px dashed #e2e8f0; font-size: 14px; color: #1e293b; text-align: right; font-family: monospace;">{{ appointment_id }}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px 0; border-bottom: 1px dashed #e2e8f0; font-size: 14px; color: #475569;"><strong>Reason:</strong></td>
+                        <td style="padding: 8px 0; border-bottom: 1px dashed #e2e8f0; font-size: 14px; color: #1e293b; text-align: right;">{{ reason }}</td>
+                    </tr>
+                </table>
             </div>
 
             <p>If you wish to book a new appointment, please visit our online portal.</p>
-            <p>Best regards,<br><strong>HealthCare Appointments Team</strong></p>
+            <p>Best regards,<br><strong>MedPulse AI Care Team</strong></p>
         </div>
         <div class="footer">
             <p>&copy; 2026 HealthCare Appointments Manager. All rights reserved.</p>

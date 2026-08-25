@@ -26,13 +26,24 @@
             
             <div class="card">
                 <div style="margin-bottom: 15px;"><span class="badge">MEDICATION REMINDER</span></div>
-                <div class="detail-row"><strong>Medication:</strong> <span>{{ medication_name }}</span></div>
-                <div class="detail-row"><strong>Dosage:</strong> <span>{{ dosage }}</span></div>
-                <div class="detail-row"><strong>Instructions:</strong> <span>{{ frequency }}</span></div>
+                <table style="width: 100%; border-collapse: collapse;">
+                    <tr>
+                        <td style="padding: 8px 0; border-bottom: 1px dashed #e2e8f0; font-size: 14px; color: #475569; width: 35%;"><strong>Medication:</strong></td>
+                        <td style="padding: 8px 0; border-bottom: 1px dashed #e2e8f0; font-size: 14px; color: #1e293b; text-align: right;">{{ medication_name }}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px 0; border-bottom: 1px dashed #e2e8f0; font-size: 14px; color: #475569;"><strong>Dosage:</strong></td>
+                        <td style="padding: 8px 0; border-bottom: 1px dashed #e2e8f0; font-size: 14px; color: #1e293b; text-align: right;">{{ dosage }}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px 0; border-bottom: 1px dashed #e2e8f0; font-size: 14px; color: #475569;"><strong>Instructions:</strong></td>
+                        <td style="padding: 8px 0; border-bottom: 1px dashed #e2e8f0; font-size: 14px; color: #1e293b; text-align: right;">{{ frequency }}</td>
+                    </tr>
+                </table>
             </div>
 
             <p>Please ensure you follow your doctor's exact instructions.</p>
-            <p>Best regards,<br><strong>HealthCare Appointments Team</strong></p>
+            <p>Best regards,<br><strong>MedPulse AI Care Team</strong></p>
         </div>
         <div class="footer">
             <p>&copy; 2026 HealthCare Appointments Manager. All rights reserved.</p>
