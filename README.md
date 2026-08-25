@@ -232,9 +232,38 @@ MedPlus-AI/
 └── .env.example
 ```
 
+## 🐳 Single-Command Container Setup (Docker & Docker Compose)
+
+The easiest and most professional way to evaluate and run the entire application stack locally is using Docker. It builds, links, and runs FastAPI, React (served via Nginx), PostgreSQL, Redis, and Celery workers with a single command—meaning you do **not** need to install Python, Node.js, Redis, or PostgreSQL on your local machine!
+
+### Quick Start (Recommended)
+Simply run the one-click startup script:
+```bash
+./start-local.sh
+```
+
+This script will:
+1. Automatically create a local `.env` file from the `.env.example` template if missing.
+2. Build and launch all 5 Docker containers (PostgreSQL, Redis, Celery Worker, FastAPI API, React Frontend) in detached mode.
+3. Automatically seed all default demo and doctor accounts directly in the PostgreSQL container once it becomes healthy.
+
+Once complete, open:
+* **Web Application**: [http://localhost](http://localhost)
+* **Interactive API Documentation (Swagger)**: [http://localhost:8000/docs](http://localhost:8000/docs)
+
+To inspect logs, run:
+```bash
+docker-compose logs -f
+```
+
+To stop the containers, run:
+```bash
+docker-compose down
+```
+
 ---
 
-## 💻 Local Development Setup
+## 💻 Local Development Setup (Manual)
 
 ### Prerequisites
 - Python 3.11+
