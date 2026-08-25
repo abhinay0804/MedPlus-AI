@@ -433,10 +433,10 @@ def send_medication_reminders_task():
         from sqlalchemy import select
         from sqlalchemy.orm import selectinload
         from server.database.models import MedicationReminder
+        from server.routes.patient_routes import safe_dispatch
 
         now = datetime.now()
         today = now.date()
-        current_time_str = now.strftime("%H:%M")
 
         async with AsyncSessionLocal() as db:
             result = await db.execute(
@@ -455,53 +455,66 @@ def send_medication_reminders_task():
             patient_groups = defaultdict(list)
             
             for reminder in due:
+                # Combine today's date with the reminder time
+                reminder_datetime = datetime.combine(today, reminder.reminder_time)
                 last_sent_date = reminder.last_sent_at.date() if reminder.last_sent_at else None
-                if reminder.reminder_time <= now.time() and (last_sent_date is None or last_sent_date < today):
+                
+                # Active window is from reminder_time to reminder_time + 2 hours
+                is_in_window = reminder_datetime <= now <= reminder_datetime + timedelta(hours=2)
+                
+                if is_in_window and (last_sent_date is None or last_sent_date < today):
                     patient_groups[reminder.patient.email].append(reminder)
             
             sent = 0
+            sent_reminders = []
             for email, reminders_list in patient_groups.items():
                 patient = reminders_list[0].patient
                 
-                if len(reminders_list) > 1:
-                    # Smartly combine multiple medicines into a single email alert!
-                    meds_str = ", ".join([r.medication_name for r in reminders_list])
-                    dosage_str = " | ".join([r.dosage or "As directed" for r in reminders_list])
-                    freq_str = " | ".join([r.frequency or "As directed" for r in reminders_list])
-                    
-                    send_email_task.delay(
-                        to_email=email,
-                        subject=f"Medication Reminder: {meds_str}",
-                        template_name="medication_reminder.html",
-                        context={
-                            "patient_name": patient.full_name,
-                            "medication_name": meds_str,
-                            "dosage": dosage_str,
-                            "frequency": freq_str,
-                        }
-                    )
-                else:
-                    reminder = reminders_list[0]
-                    send_email_task.delay(
-                        to_email=email,
-                        subject=f"Medication Reminder: {reminder.medication_name}",
-                        template_name="medication_reminder.html",
-                        context={
-                            "patient_name": patient.full_name,
-                            "medication_name": reminder.medication_name,
-                            "dosage": reminder.dosage or "As directed",
-                            "frequency": reminder.frequency or "As directed",
-                        }
-                    )
-                
-                # Mark as sent
+                # Mark as sent in DB first to ensure consistency before side-effects
                 for reminder in reminders_list:
-                    reminder.last_sent_at = datetime.utcnow()
+                    reminder.last_sent_at = now
+                    db.add(reminder)
+                    
+                sent_reminders.append((email, patient, reminders_list))
                 sent += len(reminders_list)
 
             if sent:
                 await db.commit()
-                logger.info(f"[MedReminders] Queued {sent} medication reminders into grouped email alerts")
+                # Dispatch emails after committing to DB to prevent duplicates on rollback
+                for email, patient, reminders_list in sent_reminders:
+                    if len(reminders_list) > 1:
+                        # Smartly combine multiple medicines into a single email alert!
+                        meds_str = ", ".join([r.medication_name for r in reminders_list])
+                        dosage_str = " | ".join([r.dosage or "As directed" for r in reminders_list])
+                        freq_str = " | ".join([r.frequency or "As directed" for r in reminders_list])
+                        
+                        safe_dispatch(
+                            send_email_task,
+                            to_email=email,
+                            subject=f"Medication Reminder: {meds_str}",
+                            template_name="medication_reminder.html",
+                            context={
+                                "patient_name": patient.full_name,
+                                "medication_name": meds_str,
+                                "dosage": dosage_str,
+                                "frequency": freq_str,
+                            }
+                        )
+                    else:
+                        reminder = reminders_list[0]
+                        safe_dispatch(
+                            send_email_task,
+                            to_email=email,
+                            subject=f"Medication Reminder: {reminder.medication_name}",
+                            template_name="medication_reminder.html",
+                            context={
+                                "patient_name": patient.full_name,
+                                "medication_name": reminder.medication_name,
+                                "dosage": reminder.dosage or "As directed",
+                                "frequency": reminder.frequency or "As directed",
+                            }
+                        )
+                logger.info(f"[MedReminders] Dispatched {sent} medication reminders")
 
     run_async(_run())
 
