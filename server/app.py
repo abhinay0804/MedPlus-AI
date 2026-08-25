@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from server.config import settings
 from server.database.connection import engine, Base, get_db
+from server.database import models as _models  # Ensure all ORM models are registered on metadata
 from server.routes import auth_routes, admin_routes, patient_routes, doctor_routes
 from server.websocket import ws_router, redis_subscriber
 
