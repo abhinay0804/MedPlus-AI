@@ -1,5 +1,5 @@
 # Render Blueprint — MedPulse AI
-# Deploy: Dashboard → New → Blueprint → Connect GitHub repo → Select this file
+# Deploy: Dashboard → New → Blueprint → Connect GitHub repo
 # Docs: https://render.com/docs/blueprint-spec
 
 databases:
@@ -10,7 +10,8 @@ databases:
 
 services:
   # ─────────────────────────────────────────────
-  # 1. FastAPI Backend (Web Service)
+  # 1. FastAPI Backend + Celery Worker (Web Service)
+  #    Runs both API and background tasks in one process
   # ─────────────────────────────────────────────
   - type: web
     name: medpulse-api
@@ -18,8 +19,7 @@ services:
     plan: free
     buildCommand: |
       pip install -r requirements.txt
-      pip install gunicorn psycopg2-binary
-    startCommand: gunicorn server.app:app --workers 2 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT --timeout 120
+    startCommand: bash start.sh
     healthCheckPath: /api/health
     envVars:
       - key: PYTHONPATH
@@ -30,8 +30,6 @@ services:
         fromDatabase:
           name: medpulse-db
           property: connectionString
-        # Render provides postgres:// but SQLAlchemy needs postgresql+asyncpg://
-        # We handle this in the build script
       - key: REDIS_URL
         fromService:
           name: medpulse-redis
@@ -44,7 +42,7 @@ services:
       - key: FRONTEND_URL
         value: https://medpulse-ai.onrender.com
       - key: GOOGLE_GENAI_API_KEY
-        sync: false  # Set manually in dashboard
+        sync: false
       - key: SMTP_USER
         sync: false
       - key: SMTP_PASSWORD
@@ -57,43 +55,7 @@ services:
         value: https://medpulse-api.onrender.com/api/auth/google/callback
 
   # ─────────────────────────────────────────────
-  # 2. Celery Worker + Beat (Background Worker)
-  # ─────────────────────────────────────────────
-  - type: worker
-    name: medpulse-worker
-    runtime: python
-    plan: free
-    buildCommand: |
-      pip install -r requirements.txt
-      pip install psycopg2-binary
-    startCommand: celery -A microservices.celery_app worker --beat --loglevel=info --concurrency=2
-    envVars:
-      - key: PYTHONPATH
-        value: .
-      - key: ENVIRONMENT
-        value: production
-      - key: DATABASE_URL
-        fromDatabase:
-          name: medpulse-db
-          property: connectionString
-      - key: REDIS_URL
-        fromService:
-          name: medpulse-redis
-          type: redis
-          property: connectionString
-      - key: JWT_SECRET
-        sync: false
-      - key: JWT_REFRESH_SECRET
-        sync: false
-      - key: GOOGLE_GENAI_API_KEY
-        sync: false
-      - key: SMTP_USER
-        sync: false
-      - key: SMTP_PASSWORD
-        sync: false
-
-  # ─────────────────────────────────────────────
-  # 3. React Frontend (Static Site)
+  # 2. React Frontend (Static Site)
   # ─────────────────────────────────────────────
   - type: web
     name: medpulse-ai
@@ -119,10 +81,10 @@ services:
         value: https://medpulse-api.onrender.com/api
 
   # ─────────────────────────────────────────────
-  # 4. Redis (Managed)
+  # 3. Redis (Managed Key-Value Store)
   # ─────────────────────────────────────────────
   - type: redis
     name: medpulse-redis
     plan: free
     maxmemoryPolicy: allkeys-lru
-    ipAllowList: []  # Allow all (internal Render network)
+    ipAllowList: []
