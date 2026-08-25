@@ -122,6 +122,36 @@ async def health_check(
         "environment": settings.ENVIRONMENT
     }
 
+# SMTP connection diagnostic endpoint
+@app.get("/api/health/smtp", tags=["Health"])
+async def smtp_health_check():
+    from server.services.email_service import is_smtp_configured
+    import smtplib
+    
+    configured = is_smtp_configured()
+    smtp_user = settings.SMTP_USER
+    
+    status_str = "unconfigured"
+    error_msg = None
+    
+    if configured:
+        try:
+            server = smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=5)
+            server.starttls()
+            server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
+            server.quit()
+            status_str = "connected"
+        except Exception as e:
+            status_str = "auth_error"
+            error_msg = str(e)
+            
+    return {
+        "smtp_configured": configured,
+        "smtp_user": smtp_user,
+        "smtp_status": status_str,
+        "smtp_error": error_msg
+    }
+
 # Global exception handlers
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
