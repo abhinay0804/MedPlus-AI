@@ -47,14 +47,15 @@ async def send_email_otp(data: SendOTPRequest, db: AsyncSession = Depends(get_db
 @router.post("/verify-otp")
 async def verify_email_otp(data: VerifyOTPRequest, db: AsyncSession = Depends(get_db)):
     """Verify a 6-digit OTP code."""
+    consume = (data.purpose != "Password Reset")
     await verify_otp_code(
         db=db,
         email=data.email,
         otp_code=data.otp_code,
-        purpose=data.purpose or "Registration"
+        purpose=data.purpose or "Registration",
+        consume=consume
     )
-    await db.commit()
-    return {"message": "OTP verification successful", "status": "verified"}
+    return {"message": "OTP verified successfully!", "status": "success"}
 
 @router.post("/forgot-password/request")
 async def request_password_reset_otp(data: ForgotPasswordRequest, db: AsyncSession = Depends(get_db)):

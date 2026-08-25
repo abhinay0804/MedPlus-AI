@@ -110,7 +110,8 @@ async def verify_otp_code(
     db: AsyncSession,
     email: str,
     otp_code: str,
-    purpose: str = "Email Verification"
+    purpose: str = "Email Verification",
+    consume: bool = True
 ) -> bool:
     """Validate 6-digit OTP code against database."""
     clean_email = email.lower().strip()
@@ -133,6 +134,7 @@ async def verify_otp_code(
             detail="Invalid or expired OTP verification code. Please request a new code."
         )
 
-    otp_record.is_used = True
-    await db.flush()
+    if consume:
+        otp_record.is_used = True
+        await db.flush()
     return True
