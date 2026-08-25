@@ -19,6 +19,9 @@ export const Appointments: React.FC = () => {
   const [isCancelling, setIsCancelling] = useState<string | null>(null)
   const [availableDoctors, setAvailableDoctors] = useState<any[]>([])
   const [isLoadingAvailable, setIsLoadingAvailable] = useState(false)
+  const [selectedDate, setSelectedDate] = useState('')
+  const [availableSlots, setAvailableSlots] = useState<any[]>([])
+  const [isLoadingSlots, setIsLoadingSlots] = useState(false)
 
   const fetchAvailableDoctors = async (apptId: string) => {
     try {
@@ -39,6 +42,26 @@ export const Appointments: React.FC = () => {
       setAvailableDoctors([])
     }
   }, [selectedAppt])
+
+  useEffect(() => {
+    if (newDoctorId && selectedDate) {
+      async function loadSlots() {
+        try {
+          setIsLoadingSlots(true)
+          const data = await api.get<any[]>(`/patient/doctors/${newDoctorId}/slots?target_date=${selectedDate}`)
+          setAvailableSlots(data)
+        } catch (err) {
+          console.error('Failed to load slots:', err)
+          setAvailableSlots([])
+        } finally {
+          setIsLoadingSlots(false)
+        }
+      }
+      loadSlots()
+    } else {
+      setAvailableSlots([])
+    }
+  }, [newDoctorId, selectedDate])
 
   useEffect(() => {
     fetchAppointments()
@@ -99,7 +122,7 @@ export const Appointments: React.FC = () => {
         new_doctor_id: newDoctorId,
       }
       if (newSlotStart) {
-        payload.new_slot_start = new Date(newSlotStart).toISOString()
+        payload.new_slot_start = new Date(newSlotStart + 'Z').toISOString()
       }
 
       await api.post(`/admin/appointments/${selectedAppt.id}/reassign`, payload)
@@ -107,6 +130,7 @@ export const Appointments: React.FC = () => {
       setSelectedAppt(null)
       setNewDoctorId('')
       setNewSlotStart('')
+      setSelectedDate('')
       fetchAppointments()
     } catch (err: any) {
       toast.error(err.message || 'Failed to reassign appointment')
@@ -289,6 +313,8 @@ export const Appointments: React.FC = () => {
                               onClick={() => {
                                 setSelectedAppt(appt)
                                 setNewDoctorId(appt.doctor_id)
+                                setSelectedDate(appt.slot_start.split('T')[0])
+                                setNewSlotStart(appt.slot_start)
                               }}
                               className="px-2.5 py-1 text-xs font-medium text-teal-600 hover:text-teal-700 dark:text-teal-400 hover:bg-teal-50 dark:hover:bg-teal-950/30 rounded border border-teal-200 dark:border-teal-900 transition-colors cursor-pointer"
                             >
@@ -343,40 +369,65 @@ export const Appointments: React.FC = () => {
                   <label className="block text-xs font-semibold uppercase text-slate-600 dark:text-slate-400 mb-1">Select New Doctor</label>
                   <select
                     value={newDoctorId}
-                    onChange={(e) => setNewDoctorId(e.target.value)}
+                    onChange={(e) => {
+                      setNewDoctorId(e.target.value)
+                      setNewSlotStart('') // reset slot start
+                    }}
                     required
                     className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-teal-500 outline-none"
                   >
-                    <option value="">{isLoadingAvailable ? 'Loading available doctors...' : 'Select a Doctor'}</option>
-                    {availableDoctors.map((d) => (
+                    <option value="">Select a Doctor</option>
+                    {doctors.map((d) => (
                       <option key={d.id} value={d.id}>
-                        Dr. {d.full_name} ({d.specialisation})
+                        Dr. {d.user.full_name} ({d.specialisation})
                       </option>
                     ))}
-                    {availableDoctors.length === 0 && !isLoadingAvailable && (
-                      <option value={selectedAppt.doctor_id}>
-                        Dr. {selectedAppt.doctor?.user?.full_name} (Current - No other specialists available)
-                      </option>
-                    )}
                   </select>
-                  {availableDoctors.length === 0 && !isLoadingAvailable && (
-                    <div className="mt-2 p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-[11px] text-amber-600 dark:text-amber-450 flex items-center space-x-1.5 animate-pulse">
-                      <AlertCircle className="w-4 h-4 shrink-0" />
-                      <span>No other matching specialists are available to take this slot.</span>
-                    </div>
-                  )}
-                  <p className="text-[10px] text-slate-400 mt-1 italic">Showing active, non-suspended specialists free at this slot.</p>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold uppercase text-slate-600 dark:text-slate-400 mb-1">Override Date & Time (Optional)</label>
+                  <label className="block text-xs font-semibold uppercase text-slate-600 dark:text-slate-400 mb-1">Select Reassignment Date</label>
                   <input
-                    type="datetime-local"
-                    value={newSlotStart}
-                    onChange={(e) => setNewSlotStart(e.target.value)}
+                    type="date"
+                    value={selectedDate}
+                    onChange={(e) => {
+                      setSelectedDate(e.target.value)
+                      setNewSlotStart('') // reset slot start
+                    }}
+                    required
                     className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-teal-500 outline-none"
                   />
-                  <p className="text-[10px] text-slate-400 mt-1">Leave empty to keep the original scheduled date and time slot.</p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold uppercase text-slate-600 dark:text-slate-400 mb-1">Select Available Time Slot</label>
+                  <select
+                    value={newSlotStart}
+                    onChange={(e) => setNewSlotStart(e.target.value)}
+                    required
+                    className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-teal-500 outline-none"
+                  >
+                    <option value="">{isLoadingSlots ? 'Loading slots...' : 'Select a Slot'}</option>
+                    {availableSlots.map((slot) => {
+                      const isOriginal = slot.slot_start === selectedAppt.slot_start;
+                      const displayStart = new Date(slot.slot_start + 'Z').toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                      return (
+                        <option
+                          key={slot.slot_start}
+                          value={slot.slot_start}
+                          disabled={!slot.is_available && !isOriginal}
+                        >
+                          {displayStart} {isOriginal ? ' (Current Slot)' : !slot.is_available ? ' (Booked)' : ' (Available)'}
+                        </option>
+                      )
+                    })}
+                  </select>
+                  {availableSlots.length === 0 && !isLoadingSlots && newDoctorId && selectedDate && (
+                    <div className="mt-2 p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-[11px] text-amber-600 dark:text-amber-450 flex items-center space-x-1.5 animate-pulse">
+                      <AlertCircle className="w-4 h-4 shrink-0" />
+                      <span>No matching slots available for this doctor on the selected date.</span>
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex items-center space-x-2 pt-2">
