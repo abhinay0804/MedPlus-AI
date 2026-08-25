@@ -155,7 +155,7 @@ export const AppointmentDetail: React.FC = () => {
                   <span>Resume Booking</span>
                 </button>
               )}
-              {(appointment.status === 'CONFIRMED' || appointment.status === 'PENDING_APPROVAL') && (
+              {(appointment.status === 'CONFIRMED' || appointment.status === 'PENDING_APPROVAL') && !appointment.is_started && (
                 <button
                   onClick={() => navigate(`/patient/book/${appointment.doctor_id}?reschedule_appointment_id=${appointment.id}`)}
                   className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-600 text-slate-950 rounded-full text-xs font-extrabold flex items-center space-x-1.5 transition shadow-sm cursor-pointer"
@@ -187,7 +187,7 @@ export const AppointmentDetail: React.FC = () => {
                   <span>Download Prescription PDF</span>
                 </button>
               )}
-              {(appointment.status === 'CONFIRMED' || appointment.status === 'HELD' || appointment.status === 'PENDING_APPROVAL') && (
+              {(appointment.status === 'CONFIRMED' || appointment.status === 'HELD' || appointment.status === 'PENDING_APPROVAL') && !appointment.is_started && (
                 <button
                   onClick={async () => {
                     if (window.confirm('Are you sure you want to cancel this appointment?')) {
@@ -205,8 +205,16 @@ export const AppointmentDetail: React.FC = () => {
                   <span>Cancel</span>
                 </button>
               )}
-              <span className="px-3.5 py-1.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 rounded-full text-xs font-extrabold">
-                STATUS: {appointment.status}
+              <span className={`px-3.5 py-1.5 rounded-full text-xs font-extrabold border ${
+                appointment.is_started && appointment.status === 'CONFIRMED'
+                  ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-300 border-indigo-200 dark:border-indigo-500/30 animate-pulse'
+                  : appointment.status === 'COMPLETED'
+                  ? 'bg-teal-50 dark:bg-teal-500/10 text-teal-600 dark:text-teal-300 border-teal-200 dark:border-teal-500/30'
+                  : appointment.status === 'CANCELLED'
+                  ? 'bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-300 border-rose-200 dark:border-rose-500/30'
+                  : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+              }`}>
+                STATUS: {appointment.is_started && appointment.status === 'CONFIRMED' ? 'IN PROGRESS' : appointment.status}
               </span>
             </div>
           </div>
@@ -242,7 +250,7 @@ export const AppointmentDetail: React.FC = () => {
                 </div>
               </div>
             )}
-            {appointment.status === 'CONFIRMED' && appointment.start_otp && (
+            {appointment.status === 'CONFIRMED' && !appointment.is_started && appointment.start_otp && (
               <div className="bg-gradient-to-r from-teal-500/10 to-emerald-500/10 p-4 rounded-xl border border-teal-500/20 space-y-2 sm:col-span-3">
                 <span className="text-[11px] font-bold text-teal-600 dark:text-teal-400 uppercase tracking-wider block">Start Consultation Verification Code (OTP)</span>
                 <div className="flex items-center space-x-3">

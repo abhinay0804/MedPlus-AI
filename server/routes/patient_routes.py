@@ -454,6 +454,14 @@ async def reschedule_appointment(
 
     # Sync the new calendar event (update the patient's existing Google Calendar entry)
     safe_dispatch(sync_calendar_event_task, new_appt.id, "update")
+
+    # Broadcast status change (RESCHEDULED) for old appointment via WebSocket
+    from server.websocket import publish_ws_event
+    await publish_ws_event(appointment_id, "appointment_status_change", {
+        "status": AppointmentStatus.RESCHEDULED,
+        "is_started": False
+    })
+
     return new_appt
 
 
@@ -507,6 +515,14 @@ async def cancel_appointment(
             )
 
         safe_dispatch(sync_calendar_event_task, appt.id, "delete")
+
+    # Broadcast status change (CANCELLED) via WebSocket
+    from server.websocket import publish_ws_event
+    await publish_ws_event(appointment_id, "appointment_status_change", {
+        "status": AppointmentStatus.CANCELLED,
+        "is_started": appt.is_started
+    })
+
     return appt
 
 

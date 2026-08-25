@@ -234,6 +234,13 @@ async def mark_appointment_complete(
     except Exception as e:
         logger.warning(f"Failed to send appointment completed email: {e}")
 
+    # Broadcast status change (COMPLETED) via WebSocket
+    from server.websocket import publish_ws_event
+    await publish_ws_event(appointment_id, "appointment_status_change", {
+        "status": AppointmentStatus.COMPLETED,
+        "is_started": appt.is_started
+    })
+
     return updated
 
 
@@ -453,6 +460,13 @@ async def verify_start_otp(
     )
     db.add(audit)
     await db.commit()
+
+    # Broadcast status change (is_started = True) via WebSocket
+    from server.websocket import publish_ws_event
+    await publish_ws_event(appointment_id, "appointment_status_change", {
+        "status": appt.status,
+        "is_started": True
+    })
 
     return {"success": True, "message": "OTP verified successfully. Consultation started."}
 

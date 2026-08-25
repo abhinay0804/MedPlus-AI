@@ -210,3 +210,27 @@ async def appointment_websocket(
         pass
     finally:
         await manager.disconnect(appointment_id, websocket)
+
+
+async def publish_ws_event(appointment_id: str, event_name: str, payload: dict = None):
+    """
+    Publish a real-time update to the WebSocket manager via Redis Pub/Sub.
+    Also broadcasts locally to ensure instant delivery on the same node.
+    """
+    message = {
+        "event": event_name,
+        "appointment_id": appointment_id,
+        "payload": payload or {}
+    }
+    # 1. Local broadcast
+    await manager.broadcast_to_appointment(appointment_id, message)
+    # 2. Redis publish for distributed scale
+    try:
+        import json
+        import redis.asyncio as aioredis
+        from server.config import settings
+        r = await aioredis.from_url(settings.REDIS_URL)
+        await r.publish(f"appointment:{appointment_id}", json.dumps(message))
+        await r.aclose()
+    except Exception as e:
+        logger.warning(f"[WebSocket] Redis publish failed (non-fatal): {e}")
