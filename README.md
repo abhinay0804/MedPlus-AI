@@ -1,3 +1,4 @@
+![CI](https://github.com/abhinay0804/MedPlus-AI/actions/workflows/ci.yml/badge.svg)
 # 🏥 MedPulse AI — Enterprise Smart Clinic & Practice Management Platform
 
 <p align="center">
