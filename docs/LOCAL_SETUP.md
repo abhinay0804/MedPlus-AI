@@ -81,6 +81,6 @@ PYTHONPATH=. ./venv/bin/pytest tests/ -v
 
 ## 6. Quick Evaluator Demo Logins
 
-- **Admin:** `admin@healthcare.com` / `Admin@123` (or `abhinaychowdhary97@gmail.com` / `Idkwhy@1`)
+- **Admin:** `admin@healthcare.com` / `Admin@123` (or `admin@healthcare.com / Admin@123`)
 - **Doctor:** `dr.smith@healthcare.com` / `Doctor@123`
 - **Patient:** `patient@healthcare.com` / `Patient@123`

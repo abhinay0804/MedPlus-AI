@@ -135,11 +135,11 @@ async def seed():
                 print(f"🔄 Doctor password reset: {d['email']} / DoctorPassword123!")
         # 4. Seed the Patients (including requested emails with default password)
         patient_emails = [
-            ("abhinaychowdhary97@gmail.com", "Abhinay Chowdhary", "+919876543214", "India"),
-            ("namabhinay@gmail.com", "Abhinay Nama", "+919876543210", "India"),
-            ("nama.abhinay2023@vitstudent.ac.in", "Abhinay VIT", "+919876543211", "India"),
-            ("abhilinux25@gmail.com", "Abhinay Linux", "+919876543212", "India"),
-            ("onlyiknowwww@gmail.com", "IKnow Patient", "+919876543213", "India"),
+            ("patient1@example.com", "Patient One", "+1234567001", "India"),
+            ("patient2@example.com", "Patient Two", "+1234567002", "India"),
+            ("patient3@example.com", "Patient Three", "+1234567003", "India"),
+            ("patient4@example.com", "Patient Four", "+1234567004", "India"),
+            ("patient5@example.com", "Patient Five", "+1234567005", "India"),
             ("patient@healthcare.com", "John Doe (Demo)", "+1122334455", "USA"),
             ("sim_patient_6@healthcare.com", "Jane Smith", "+1223344556", "UK"),
             ("sim_patient_7@healthcare.com", "Alice Johnson", "+1334455667", "Canada"),
@@ -265,12 +265,12 @@ async def seed():
         # Seed realistic appointment grid relative to today
         today = datetime.utcnow().replace(hour=10, minute=0, second=0, microsecond=0)
 
-        # Patient 0: abhinaychowdhary97@gmail.com (with 5-minute dynamic reminder)
+        # Patient 0: patient1@example.com (with 5-minute dynamic reminder)
         import datetime as dt_module
         target_reminder_time = (dt_module.datetime.now() + dt_module.timedelta(minutes=5)).time()
-        print(f"⏰ Setting dynamic medication reminder for abhinaychowdhary97@gmail.com at: {target_reminder_time.strftime('%H:%M:%S')}")
+        print(f"⏰ Setting dynamic medication reminder for patient1@example.com at: {target_reminder_time.strftime('%H:%M:%S')}")
         await create_appt(
-            seeded_patients["abhinaychowdhary97@gmail.com"], dr_smith,
+            seeded_patients["patient1@example.com"], dr_smith,
             today - timedelta(days=1), AppointmentStatus.COMPLETED,
             is_started=True, review_rating=5, review_comment="Outstanding clinic session!",
             symptom_txt="Experiencing temporary muscle cramps and fatigue.",
@@ -278,63 +278,63 @@ async def seed():
             reminder_time_override=target_reminder_time
         )
 
-        # Patient 1: namabhinay@gmail.com
+        # Patient 1: patient2@example.com
         # - 1 Completed slot (with 5-star review)
         # - 1 Cancelled slot
         # - 1 Confirmed Upcoming slot (rescheduled)
         await create_appt(
-            seeded_patients["namabhinay@gmail.com"], dr_smith,
+            seeded_patients["patient2@example.com"], dr_smith,
             today - timedelta(days=2), AppointmentStatus.COMPLETED,
             is_started=True, review_rating=5, review_comment="Dr. Smith was amazing! She explained the diagnosis in detail.",
             symptom_txt="Severe chest pain and heavy heart beats when running.",
             note_summary="ECG normal. Mild sinus tachycardia related to fatigue. Prescribed basic cardio vitamins."
         )
         await create_appt(
-            seeded_patients["namabhinay@gmail.com"], dr_smith,
+            seeded_patients["patient2@example.com"], dr_smith,
             today - timedelta(days=1), AppointmentStatus.CANCELLED,
             symptom_txt="Follow up consultation request."
         )
         await create_appt(
-            seeded_patients["namabhinay@gmail.com"], dr_smith,
+            seeded_patients["patient2@example.com"], dr_smith,
             today + timedelta(days=1), AppointmentStatus.CONFIRMED,
             symptom_txt="General checkup follow up."
         )
 
-        # Patient 2: nama.abhinay2023@vitstudent.ac.in
+        # Patient 2: patient3@example.com
         # - 1 Completed Slot (with 4-star review)
         # - 1 Confirmed Slot (tomorrow)
         await create_appt(
-            seeded_patients["nama.abhinay2023@vitstudent.ac.in"], dr_chen,
+            seeded_patients["patient3@example.com"], dr_chen,
             today - timedelta(days=1), AppointmentStatus.COMPLETED,
             is_started=True, review_rating=4, review_comment="Great general medicine overview. Prompt prescriptions.",
             symptom_txt="Sudden cold, sore throat, and low-grade fever.",
             note_summary="Viral pharyngitis. Rest and hydration recommended. Prescription issued."
         )
         await create_appt(
-            seeded_patients["nama.abhinay2023@vitstudent.ac.in"], dr_chen,
+            seeded_patients["patient3@example.com"], dr_chen,
             today + timedelta(days=1, hours=2), AppointmentStatus.CONFIRMED,
             symptom_txt="Sore throat follow up check."
         )
 
-        # Patient 3: abhilinux25@gmail.com
+        # Patient 3: patient4@example.com
         # - 1 Cancelled Slot
         # - 1 Confirmed Slot (tomorrow)
         await create_appt(
-            seeded_patients["abhilinux25@gmail.com"], dr_patel,
+            seeded_patients["patient4@example.com"], dr_patel,
             today - timedelta(days=1, hours=3), AppointmentStatus.CANCELLED,
             symptom_txt="Skin rash consultation."
         )
         await create_appt(
-            seeded_patients["abhilinux25@gmail.com"], dr_patel,
+            seeded_patients["patient4@example.com"], dr_patel,
             today + timedelta(days=1, hours=4), AppointmentStatus.CONFIRMED,
             symptom_txt="Persistent skin rash on hand and dry skin."
         )
 
-        # Patient 4: onlyiknowwww@gmail.com
+        # Patient 4: patient5@example.com
         # - 1 In-Progress Slot (started today, doctor conducting consultation)
         # - 1 Support Ticket (Resolved)
         await create_appt(
-            seeded_patients["onlyiknowwww@gmail.com"], dr_smith,
+            seeded_patients["patient5@example.com"], dr_smith,
             today, AppointmentStatus.CONFIRMED,
             is_started=True,
             symptom_txt="Shortness of breath under high workload anxiety.",
